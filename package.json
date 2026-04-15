@@ -1,0 +1,46 @@
+{
+  "name": "flowos-erp",
+  "version": "3.0.0",
+  "description": "Professional aluminum window/door ERP system with AI-powered catalog analysis",
+  "author": "Your Name",
+  "license": "PROPRIETARY",
+  "keywords": [
+    "erp",
+    "aluminum",
+    "windows",
+    "doors",
+    "management",
+    "google-apps-script",
+    "react",
+    "ai",
+    "claude"
+  ],
+  "homepage": ".",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/flowos-erp"
+  },
+  "scripts": {
+    "dev": "python -m http.server 8000 --directory frontend",
+    "dev:node": "npx http-server frontend -p 8000",
+    "docs": "echo 'See docs/ directory for documentation",
+    "test": "echo 'No tests configured yet'",
+    "deploy": "echo 'See docs/DEPLOYMENT.md for deployment instructions'"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "browserslist": [
+    "last 2 versions",
+    "not dead"
+  ],
+  "config": {
+    "backendLanguage": "Google Apps Script",
+    "frontendFramework": "React 18",
+    "apiStyle": "REST",
+    "database": "Google Sheets",
+    "aiProvider": "Anthropic Claude"
+  }
+}
