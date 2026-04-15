@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlowOS v3 Premium</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // GOOGLE APPS SCRIPT API
+    // ══════════════════════════════════════════════════════════════════════════
+    
+    const callGas = (fn, ...args) => new Promise((resolve, reject) => {
+      if (typeof google === 'undefined' || !google.script) {
+        return reject(new Error('Local env (google is not defined)'));
+      }
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args);
+    });
+
+    const API = {
+      load: () => callGas('getAllData'),
+      save: (data) => callGas('saveAllData', data),
+      callAI: (messages, maxTokens = 1000) => callGas('callAnthropicAPI', messages, maxTokens),
+      savePDF: (htmlContent, filename) => callGas('savePDFtoDrive', htmlContent, filename),
+      sendEmail: (to, subject, body, htmlContent, filename) => callGas('sendEmailWithPDF', to, subject, body, htmlContent, filename),
+      viberLink: (phone, message) => callGas('generateViberLink', phone, message)
+    };
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // CONSTANTS & HELPERS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    const C = {
+      bg: "#22262d", panel: "#2d3239", card: "#333a42", border: "#3e454f",
+      accent: "#c17f4e", accentH: "#d4946a", textPri: "#e8e4de", textSec: "#9a9590",
+      textMut: "#666b72", green: "#4caf82", red: "#c06060", blue: "#5b8fc9", warn: "#c9a84c"
+    };
+
+    const VAT = 0.24;
+    const CONFIRM = "9879";
+    const uid = () => Math.random().toString(36).slice(2, 9);
+    const today = () => new Date().toLocaleDateString("el-GR");
+    const fmtN = n => Number(n || 0).toFixed(2).replace(".", ",");
+
+    const extractAIText = (result) => {
+      if (!result) return "";
+      if (typeof result === "string") return result;
+      if (result.error) throw new Error(result.error);
+      if (Array.isArray(result.content)) {
+        return result.content.filter(block => block && block.type === "text").map(block => block.text || "").join("\n");
+      }
+      return "";
+    };
+
+    const parseFirstJSONObject = (rawText, fallback = {}) => {
+      const raw = String(rawText || "");
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) return fallback;
+      try {
+        return JSON.parse(match[0]);
+      } catch (error) {
+        return fallback;
+      }
+    };
+
+    const TYPOLOGIES = {
+      "ΑΝΟΙΓΟΜΕΝΟ": ["ΜΟΝΟΦΥΛΛΟ", "ΜΟΝΟΦΥΛΛΟ ΜΕ ΤΑΦ", "ΔΙΦΥΛΛΟ", "ΔΙΦΥΛΛΟ ΜΕ ΤΑΦ", "ΦΕΓΓΙΤΗΣ", "ΤΡΙΦΥΛΛΟ", "ΤΕΤΡΑΦΥΛΛΟ"],
+      "ΣΥΡΟΜΕΝΟ": ["ΔΙΦΥΛΛΟ ΕΠΑΛΛΗΛΟ", "ΔΙΦΥΛΛΟ ΕΠΑΛΛΗΛΟ ΜΕ ΣΙΤΑ", "ΤΡΙΦΥΛΛΟ ΕΠΑΛΛΗΛΟ", "ΤΕΤΡΑΦΥΛΛΟ ΑΝΤΙΚΡΙΣΤΟ", "ΜΟΝΟΦΥΛΛΟ ΧΩΝΕΥΤΟ ΤΖ", "ΔΙΦΥΛΛΟ ΧΩΝΕΥΤΟ ΤΖ"],
+      "ΠΟΡΤΑ": ["ΠΟΡΤΑ ΜΟΝΟΦΥΛΛΗ", "ΠΟΡΤΑ ΜΟΝΟΦΥΛΛΗ ΜΕ ΦΕΓΓΙΤΗ", "ΠΟΡΤΑ ΜΟΝΟΦΥΛΛΗ ΜΕ ΤΖΑΜΙ", "ΠΟΡΤΑ ΔΙΦΥΛΛΗ", "ΠΟΡΤΑ ΜΕ ΣΤΑΘΕΡΟ ΑΡ", "ΠΟΡΤΑ ΜΕ ΣΤΑΘΕΡΟ ΔΕΞ"],
+      "ΣΤΑΘΕΡΟ": ["ΣΤΑΘΕΡΟ"],
+      "ΑΝΑΣΥΡΟΜΕΝΟ": ["ΑΝΑΣΥΡΟΜΕΝΟ ΜΟΝΟΦΥΛΛΟ", "ΑΝΑΣΥΡΟΜΕΝΟ ΔΙΦΥΛΛΟ"],
+      "ΠΤΥΣΣΟΜΕΝΟ": ["ΠΤΥΣΣΟΜΕΝΟ 3 ΦΥΛΛΩΝ", "ΠΤΥΣΣΟΜΕΝΟ 4 ΦΥΛΛΩΝ"]
+    };
+
+    const SERIES = ["EOS60", "ESS34", "ESS47", "S77", "E600", "W72"];
+    const GLASSES = ["4+16+4", "4+12+4", "6+16+4 Low-E", "6+16+6 Low-E", "Μονός 6mm", "Triplex 4+4"];
+    const COLORS = ["Λευκό RAL9016", "Ανθρακί RAL7016", "Μαύρο RAL9005", "Χρυσό Ανοδίωση", "Ασημί Ανοδίωση", "Χάλκινη Ανοδίωση"];
+    const ROLO = ["—", "Επικαθήμενο", "Επικαθήμενο Thermo", "Εξωτερικό"];
+    const KANALI = ["—", "Απλό", "Φτερό 8", "Φτερό 10", "Φτερό 12", "Φτερό 14"];
+    const MOTOR = ["—", "Αριστερά", "Δεξιά", "Χειροκίνητο"];
+    const ANOIGMA = ["—", "Αριστερά", "Δεξιά"];
+    const PREBAZI = [
+      { v: "none", l: "Κανένα" }, { v: "top", l: "Επάνω" }, { v: "bottom", l: "Κάτω" },
+      { v: "left", l: "Αριστερά" }, { v: "right", l: "Δεξιά" }, { v: "top-left", l: "Επάνω+Αρ" },
+      { v: "top-right", l: "Επάνω+Δεξ" }, { v: "bottom-left", l: "Κάτω+Αρ" },
+      { v: "bottom-right", l: "Κάτω+Δεξ" }, { v: "all", l: "Παντού" }
+    ];
+
+    const STATUS_LABEL = {
+      premeasure: "Προμέτρηση", analysis: "Ανάλυση", offer: "Προσφορά",
+      order: "Παραγγελία", production: "Παραγωγή", completed: "Ολοκλήρωση"
+    };
+    const STATUS_COLOR = {
+      premeasure: C.blue, analysis: C.warn, offer: C.accent,
+      order: C.green, production: "#7a9e6e", completed: C.textMut
+    };
+
+    const KASA = {
+      "EOS60": ["EOS60-K60", "EOS60-K65"], "ESS34": ["ESS34-K1"], "ESS47": ["ESS47-K1"],
+      "S77": ["S77-K1", "S77-K2"], "E600": ["E600-K1"], "W72": ["W72-K1"]
+    };
+    const FYLO = {
+      "EOS60": ["EOS60-F60", "EOS60-F65"], "ESS34": ["ESS34-F1"], "ESS47": ["ESS47-F1"],
+      "S77": ["S77-F1"], "E600": ["E600-F1"], "W72": ["W72-F1"]
+    };
+
+    // Styles
+    const inp = { width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${C.border}`, background: C.bg, color: C.textPri, fontSize: 13, boxSizing: "border-box", outline: "none" };
+    const lbl = { fontSize: 11, color: C.textSec, marginBottom: 3, display: "block", textTransform: "uppercase", letterSpacing: "0.05em" };
+    const th = { padding: "7px 10px", textAlign: "left", fontSize: 11, color: C.textSec, borderBottom: `1px solid ${C.border}`, fontWeight: 500, background: C.panel };
+    const td = { padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.border}`, color: C.textPri };
+    const card = { background: C.card, borderRadius: 10, padding: 18, marginBottom: 12, border: `1px solid ${C.border}` };
+    const btn = (bg, col = "#fff") => ({ padding: "7px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500, background: bg, color: col });
+    const badge = (c) => ({ fontSize: 11, padding: "2px 9px", borderRadius: 20, background: c + "33", color: c, fontWeight: 500, display: "inline-block", border: `1px solid ${c}55` });
+
+    function F({ label, value, onChange, type = "text", ph = "", readOnly = false, small = false }) {
+      return <div><label style={lbl}>{label}</label><input style={{ ...inp, ...(small ? { padding: "5px 8px", fontSize: 12 } : {}), ...(readOnly ? { background: C.panel, color: C.textSec } : {}) }} type={type} value={value} onChange={e => onChange && onChange(e.target.value)} placeholder={ph} readOnly={readOnly} /></div>;
+    }
+
+    function Sel({ label, value, onChange, opts, small = false }) {
+      return <div><label style={lbl}>{label}</label><select style={{ ...inp, ...(small ? { padding: "5px 8px", fontSize: 12 } : {}) }} value={value} onChange={e => onChange && onChange(e.target.value)}>{opts.map(o => typeof o === "string" ? <option key={o}>{o}</option> : <option key={o.v} value={o.v}>{o.l}</option>)}</select></div>;
+    }
+
+// ── Seed data ────────────────────────────────────────────────────────────────
+const SEED_SUPPLIERS = [
+  { id:"sup1", name:"Alumil ΑΕ", contact:"Παπαδόπουλος Γ.", phone:"2310123456", email:"orders@alumil.com", viber:"6941000001", type:"Προφίλ" },
+  { id:"sup2", name:"Glasscorp", contact:"Νικολάου Α.", phone:"2101234567", email:"glass@glasscorp.gr", viber:"6942000002", type:"Τζάμια" },
+  { id:"sup3", name:"Rollotech", contact:"Σταματίου Κ.", phone:"2310987654", email:"info@rollotech.gr", viber:"6943000003", type:"Ρολά" },
+];
+const mkWin = () => ({ id:uid(), no:1, height:"", width:"", type:"ΑΝΟΙΓΟΜΕΝΟ", series:"EOS60", typology:"", glass:"4+16+4", color:"Λευκό RAL9016", rolo:"—", kanali:"—", boxH:"", motor:"—", anoigma:"—", prebazi:"none", notes:"", kasaCode:"EOS60-K60", fyloCode:"EOS60-F60" });
+const SEED_CLIENTS = [
+  { id:"c1", name:"Νίκος Παπαδόπουλος", phone:"6941234567", email:"nikos@mail.gr", city:"Αθήνα", category:"Ιδιώτης", source:"Σύσταση" },
+  { id:"c2", name:"Ελένη Σταματίου",    phone:"6952345678", email:"eleni@mail.gr", city:"Πειραιάς", category:"Εργολάβος", source:"Google" },
+];
+const SEED_PROJECTS = [{
+  id:"pr1", clientId:"c1", code:"PRJ-A1B2C3", title:"Αλλαγή κουφωμάτων σαλόνι",
+  address:"Λεωφ. Αθηνών 12", date:today(), status:"premeasure",
+  windows:[{ ...mkWin(), no:1, typology:"ΜΟΝΟΦΥΛΛΟ", width:"1.20", height:"2.10" }],
+  payments:[], extras:[], invoices:[], notes:"",
+  agreement:{ net:"", vatPct:"24" },
+  payPlan:[{id:uid(),stage:"Προκαταβολή",pct:50},{id:uid(),stage:"Αρχή τοποθέτησης",pct:20},{id:uid(),stage:"Αποπεράτωση",pct:30}],
+  kmWins: [],
+}];
+
+// ── App ───────────────────────────────────────────────────────────────────────
+function App() {
+  const [loading, setLoading] = useState(true);
+  const [clients, setClients] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [settings, setSettings] = useState({});
+  const [page, setPage] = useState("dashboard");
+  const [ctx, setCtx] = useState({});
+
+  useEffect(() => {
+    API.load()
+      .then(data => {
+        setClients(data.clients || SEED_CLIENTS);
+        setProjects(data.projects || SEED_PROJECTS);
+        setSuppliers(data.suppliers || SEED_SUPPLIERS);
+        setSettings(data.settings || {});
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Load error:', err);
+        setClients(SEED_CLIENTS);
+        setProjects(SEED_PROJECTS);
+        setSuppliers(SEED_SUPPLIERS);
+        setLoading(false);
+      });
+  }, []);
+
+  const saveTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (loading) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      const data = { clients, projects, suppliers, settings, catalog: {}, standaloneOrders: [] };
+      API.save(data).then(() => console.log('✓ Saved')).catch(console.error);
+    }, 800);
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [clients, projects, suppliers, settings, loading]);
+
+  const upProject = (id, fn) => setProjects(ps => ps.map(p => p.id===id ? {...p,...fn(p)} : p));
+  const nav = (pg, c={}) => { setCtx(c); setPage(pg); };
+  const project  = projects.find(p => p.id===ctx.projectId);
+  const client   = clients.find(c => c.id===ctx.clientId);
+
+  const clientBal = cid => projects.filter(p=>p.clientId===cid).reduce((s,p)=>{
+    const inv  = (p.invoices||[]).reduce((a,i)=>a+(+i.amount||0), 0);
+    const paid = (p.payments||[]).reduce((a,x)=>a+(+x.net||0)+(+x.vat||0), 0);
+    return s + inv - paid;
+  }, 0);
+
+  if (loading) {
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontSize: 20, fontWeight: 600, color: C.accent, background: C.bg }}>⏳ Φόρτωση...</div>;
+  }
+
+  const bg = { display:"flex", height:"100vh", fontFamily:"'Inter',system-ui,sans-serif", fontSize:14, color:C.textPri, background:C.bg, overflow:"hidden" };
+
+  return (
+    <div style={bg}>
+      <Sidebar page={page} nav={nav}/>
+      <main style={{ flex:1, overflowY:"auto", padding:24, background:C.bg }}>
+        {page==="dashboard"  && <Dashboard clients={clients} projects={projects} nav={nav} clientBal={clientBal}/>}
+        {page==="clients"    && <Clients clients={clients} setClients={setClients} projects={projects} nav={nav} clientBal={clientBal}/>}
+        {page==="projects"   && <Projects projects={projects} setProjects={setProjects} clients={clients} nav={nav}/>}
+        {page==="workspace"  && project && <Workspace project={project} client={client} upProject={upProject} nav={nav} suppliers={suppliers} settings={settings}/>}
+        {page==="suppliers"  && <Suppliers suppliers={suppliers} setSuppliers={setSuppliers}/>}
+        {page==="settings"   && <Settings settings={settings} setSettings={setSettings}/>}
+        {page==="dbadmin"    && <DBAdmin/>}
+      </main>
+    </div>
+  );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function Sidebar({ page, nav }) {
+  const groups = [
+    { label:"ΚΕΝΤΡΟ", items:[["dashboard","⊞","Πίνακας Ελέγχου"],["clients","👤","Πελάτες"],["projects","📁","Έργα"]] },
+    { label:"ΧΩΡΟΣ ΕΡΓΑΣΙΑΣ", items:[["workspace","🏗","Χώρος Εργασίας Έργου"]] },
+    { label:"ΔΙΑΧΕΙΡΙΣΗ", items:[["suppliers","🚚","Προμηθευτές"],["settings","⚙️","Ρυθμίσεις"],["dbadmin","🗄","Βάση Δεδομένων / Διαχείριση"]] },
+  ];
+  return (
+    <aside style={{ width:200, background:C.panel, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", flexShrink:0 }}>
+      <div style={{ padding:"18px 16px 12px", borderBottom:`1px solid ${C.border}` }}>
+        <div style={{ fontWeight:700, fontSize:17, color:C.textPri, letterSpacing:"-0.3px" }}>Flow_Os</div>
+        <div style={{ fontSize:11, color:C.textSec, marginTop:2 }}>Σύστημα ERP Αλουμινίου</div>
+      </div>
+      <nav style={{ flex:1, padding:"10px 0", overflowY:"auto" }}>
+        {groups.map(g=>(
+          <div key={g.label}>
+            <div style={{ fontSize:10, color:C.textMut, padding:"10px 16px 4px", letterSpacing:"0.1em", fontWeight:600 }}>{g.label}</div>
+            {g.items.map(([id,ic,lb])=>{
+              const active = page===id;
+              return (
+                <button key={id} onClick={()=>nav(id)} style={{ display:"flex", alignItems:"center", gap:10, width:"100%", textAlign:"left", padding:"9px 16px", border:"none", borderRadius:0, cursor:"pointer", background:active?`${C.accent}22`:"transparent", color:active?C.accent:C.textSec, fontSize:13, fontWeight:active?600:400 }}>
+                  <span style={{ width:7, height:7, borderRadius:"50%", background:active?C.accent:C.border, flexShrink:0 }}/>
+                  {lb}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+      <div style={{ padding:"12px 16px", borderTop:`1px solid ${C.border}`, fontSize:11, color:C.textMut }}>v2.1 · {today()}</div>
+    </aside>
+  );
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function Dashboard({ clients, projects, nav, clientBal }) {
+  const totalBal = clients.reduce((s,c)=>s+clientBal(c.id),0);
+  const active = projects.filter(p=>p.status!=="completed");
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:24 }}>
+        <div><h2 style={{ margin:0, fontWeight:600, color:C.textPri }}>Πίνακας Ελέγχου</h2><div style={{ color:C.textSec, fontSize:13, marginTop:2 }}>{today()}</div></div>
+        <div style={{ textAlign:"right" }}>
+          <div style={{ fontSize:28, fontWeight:700, color:C.accent }}>{fmtN(totalBal)} €</div>
+          <div style={{ fontSize:12, color:C.textSec }}>Εκκρεμές Υπόλοιπο</div>
+        </div>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:20 }}>
+        {[[active.length,"Ενεργά Έργα",C.accent],[clients.length,"Πελάτες",C.blue],[projects.filter(p=>p.status==="completed").length,"Ολοκληρωμένα",C.green]].map(([v,l,c])=>(
+          <div key={l} style={{ ...card, marginBottom:0, borderLeft:`3px solid ${c}` }}>
+            <div style={{ fontSize:26, fontWeight:700, color:c }}>{v}</div>
+            <div style={{ fontSize:12, color:C.textSec, marginTop:2 }}>{l}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+        <div style={card}>
+          <div style={{ fontWeight:600, marginBottom:10, color:C.textPri }}>Ενεργά Έργα</div>
+          {active.map(p=>{ const cl=clients.find(c=>c.id===p.clientId); return (
+            <div key={p.id} onClick={()=>nav("workspace",{clientId:p.clientId,projectId:p.id})} style={{ padding:"8px 0", borderBottom:`1px solid ${C.border}`, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div><div style={{ fontWeight:500, fontSize:13 }}>{p.title}</div><div style={{ fontSize:11, color:C.textSec }}>{cl?.name}</div></div>
+              <span style={badge(STATUS_COLOR[p.status])}>{STATUS_LABEL[p.status]}</span>
+            </div>
+          ); })}
+          {active.length===0&&<div style={{ color:C.textMut, fontSize:13 }}>Δεν υπάρχουν ενεργά έργα</div>}
+        </div>
+        <div style={card}>
+          <div style={{ fontWeight:600, marginBottom:10 }}>Γρήγορες Ενέργειες</div>
+          {[["+ Νέος Πελάτης",()=>nav("clients")],["+  Νέο Έργο",()=>nav("projects")],["Προμηθευτές",()=>nav("suppliers")],["Διαχείριση Βάσης",()=>nav("dbadmin")]].map(([l,fn])=>(
+            <button key={l} onClick={fn} style={{ ...btn(C.border, C.textPri), width:"100%", textAlign:"left", marginBottom:6, border:`1px solid ${C.border}` }}>{l}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Clients ───────────────────────────────────────────────────────────────────
+function Clients({ clients, setClients, projects, nav, clientBal }) {
+  const [showNew,setShowNew]=useState(false);
+  const [form,setForm]=useState({name:"",phone:"",email:"",city:"",category:"Ιδιώτης",source:"Σύσταση"});
+  const [del,setDel]=useState(null); const [dc,setDc]=useState("");
+  const sorted=[...clients].sort((a,b)=>a.name.localeCompare(b.name,"el"));
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        <h2 style={{ margin:0, fontWeight:600 }}>Πελάτες</h2>
+        <button style={btn(C.accent)} onClick={()=>setShowNew(true)}>+ Νέος Πελάτης</button>
+      </div>
+      {showNew&&<div style={{ ...card, border:`1px solid ${C.accent}` }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+          <F label="Ονοματεπώνυμο" value={form.name} onChange={v=>setForm(f=>({...f,name:v}))}/>
+          <F label="Τηλέφωνο" value={form.phone} onChange={v=>setForm(f=>({...f,phone:v}))}/>
+          <F label="Ηλεκτρονικό Ταχυδρομείο" value={form.email} onChange={v=>setForm(f=>({...f,email:v}))}/>
+          <F label="Πόλη" value={form.city} onChange={v=>setForm(f=>({...f,city:v}))}/>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button style={btn(C.accent)} onClick={()=>{ setClients(cs=>[...cs,{id:uid(),...form}]); setShowNew(false); }}>Αποθήκευση</button>
+          <button style={btn(C.border,C.textPri)} onClick={()=>setShowNew(false)}>Ακύρωση</button>
+        </div>
+      </div>}
+      {del&&<ConfirmDel code={dc} onChange={setDc} onConfirm={()=>{ if(dc===CONFIRM){setClients(cs=>cs.filter(c=>c.id!==del));setDel(null);setDc("");} }} onCancel={()=>{setDel(null);setDc("");}}/>}
+      <table style={{ width:"100%", borderCollapse:"collapse", background:C.card, borderRadius:10, overflow:"hidden" }}>
+        <thead><tr>{["Ονοματεπώνυμο","Πόλη","Τηλέφωνο","Κατηγορία","Υπόλοιπο",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+        <tbody>{sorted.map(c=>{
+          const bal=clientBal(c.id);
+          return <tr key={c.id} style={{ cursor:"pointer" }} onClick={()=>nav("clients",{clientId:c.id})}>
+            <td style={td}><span style={{ fontWeight:500 }}>{c.name}</span></td>
+            <td style={td}>{c.city}</td>
+            <td style={td}>{c.phone}</td>
+            <td style={td}><span style={badge(C.accent)}>{c.category}</span></td>
+            <td style={{ ...td, color:bal>0?C.red:C.green, fontWeight:500 }}>{fmtN(bal)} €</td>
+            <td style={td}><button style={{ ...btn(C.red), padding:"3px 8px", fontSize:11 }} onClick={e=>{e.stopPropagation();setDel(c.id);}}>✕</button></td>
+          </tr>;
+        })}</tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Projects ──────────────────────────────────────────────────────────────────
+function Projects({ projects, setProjects, clients, nav }) {
+  const [showNew,setShowNew]=useState(false);
+  const [form,setForm]=useState({clientId:clients[0]?.id||"",title:"",address:""});
+  const [del,setDel]=useState(null); const [dc,setDc]=useState("");
+  const save=()=>{ setProjects(ps=>[...ps,{id:uid(),code:"PRJ-"+uid().toUpperCase().slice(0,6),...form,date:today(),status:"premeasure",windows:[mkWin()],payments:[],extras:[],invoices:[],notes:"",agreement:{net:"",vatPct:"24"},payPlan:[{id:uid(),stage:"Προκαταβολή",pct:50},{id:uid(),stage:"Αρχή τοποθέτησης",pct:20},{id:uid(),stage:"Αποπεράτωση",pct:30}],kmWins:[]}]); setShowNew(false); };
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        <h2 style={{ margin:0, fontWeight:600 }}>Έργα</h2>
+        <button style={btn(C.accent)} onClick={()=>setShowNew(true)}>+ Νέο Έργο</button>
+      </div>
+      {showNew&&<div style={{ ...card, border:`1px solid ${C.accent}` }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+          <div><label style={lbl}>Πελάτης</label><select style={inp} value={form.clientId} onChange={e=>setForm(f=>({...f,clientId:e.target.value}))}>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          <F label="Τίτλος" value={form.title} onChange={v=>setForm(f=>({...f,title:v}))}/>
+          <F label="Διεύθυνση Έργου" value={form.address} onChange={v=>setForm(f=>({...f,address:v}))}/>
+        </div>
+        <div style={{ display:"flex", gap:8 }}><button style={btn(C.accent)} onClick={save}>Αποθήκευση</button><button style={btn(C.border,C.textPri)} onClick={()=>setShowNew(false)}>Ακύρωση</button></div>
+      </div>}
+      {del&&<ConfirmDel code={dc} onChange={setDc} onConfirm={()=>{ if(dc===CONFIRM){setProjects(ps=>ps.filter(p=>p.id!==del));setDel(null);setDc("");} }} onCancel={()=>{setDel(null);setDc("");}}/>}
+      <div style={{ display:"grid", gap:8 }}>
+        {projects.map(p=>{ const cl=clients.find(c=>c.id===p.clientId); return (
+          <div key={p.id} style={{ ...card, marginBottom:0, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }} onClick={()=>nav("workspace",{clientId:p.clientId,projectId:p.id})}>
+            <div><div style={{ fontWeight:500 }}>{p.title}</div><div style={{ fontSize:12, color:C.textSec }}>{cl?.name} · {p.code} · {p.date}</div></div>
+            <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+              <span style={badge(STATUS_COLOR[p.status])}>{STATUS_LABEL[p.status]}</span>
+              <button style={{ ...btn(C.red), padding:"3px 8px", fontSize:11 }} onClick={e=>{e.stopPropagation();setDel(p.id);}}>✕</button>
+            </div>
+          </div>
+        ); })}
+      </div>
+    </div>
+  );
+}
+
+function ConfirmDel({ code, onChange, onConfirm, onCancel }) {
+  return <div style={{ ...card, border:`1px solid ${C.red}`, marginBottom:12 }}>
+    <div style={{ color:C.red, fontWeight:600, marginBottom:8 }}>Επιβεβαίωση Διαγραφής — κωδικός {CONFIRM}</div>
+    <div style={{ display:"flex", gap:8 }}>
+      <input style={{ ...inp, width:100 }} value={code} onChange={e=>onChange(e.target.value)} placeholder={CONFIRM}/>
+      <button style={btn(C.red)} onClick={onConfirm}>Διαγραφή</button>
+      <button style={btn(C.border,C.textPri)} onClick={onCancel}>Ακύρωση</button>
+    </div>
+  </div>;
+}
+
+// ── Workspace ─────────────────────────────────────────────────────────────────
+function Workspace({ project, client, upProject, nav, suppliers }) {
+  const [tab,setTab]=useState("prometrisi");
+  const TABS=[["prometrisi","Προμέτρηση"],["analysis","Ανάλυση"],["offer","Προσφορά"],["orders","Παραγγελίες"],["kyria","Κύρια Μέτρηση"],["payments","Πληρωμές"],["invoices","Παραστατικά"],["extras","Πρόσθετα"]];
+  const up = ch => upProject(project.id, ()=>ch);
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
+        <button style={{ ...btn(C.border,C.textSec), padding:"5px 10px", fontSize:12 }} onClick={()=>nav("projects")}>← Έργα</button>
+        <div><div style={{ fontWeight:600, fontSize:16 }}>{project.title}</div><div style={{ fontSize:12, color:C.textSec }}>{client?.name} · {project.code}</div></div>
+        <select value={project.status} onChange={e=>up({status:e.target.value})} style={{ ...inp, width:"auto", padding:"5px 10px", fontSize:12, marginLeft:"auto" }}>
+          {Object.entries(STATUS_LABEL).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+        </select>
+      </div>
+      <div style={{ display:"flex", gap:2, marginBottom:16, flexWrap:"wrap", borderBottom:`1px solid ${C.border}`, paddingBottom:0 }}>
+        {TABS.map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{ padding:"8px 13px", fontSize:12, borderRadius:"7px 7px 0 0", border:"none", cursor:"pointer", background:tab===k?C.accent:"transparent", color:tab===k?"#fff":C.textSec, fontWeight:tab===k?600:400 }}>{l}</button>
+        ))}
+      </div>
+      {tab==="prometrisi" && <TabPrometrisi project={project} up={up}/>}
+      {tab==="analysis"   && <TabAnalysis   project={project} up={up}/>}
+      {tab==="offer"      && <TabOffer       project={project} client={client}/>}
+      {tab==="orders"     && <TabOrders      project={project} suppliers={suppliers}/>}
+      {tab==="kyria"      && <TabKyria       project={project} up={up}/>}
+      {tab==="payments"   && <TabPayments    project={project} up={up}/>}
+      {tab==="invoices"   && <TabInvoices    project={project} up={up}/>}
+      {tab==="extras"     && <TabExtras      project={project} up={up}/>}
+    </div>
+  );
+}
+
+// ── Tab Προμέτρηση ────────────────────────────────────────────────────────────
+function TabPrometrisi({ project, up }) {
+  const wins=project.windows||[];
+  const addWin=()=>{ const w=mkWin(); w.no=wins.length+1; up({windows:[...wins,w]}); };
+  const del=id=>up({windows:wins.filter(w=>w.id!==id).map((w,i)=>({...w,no:i+1}))});
+  const upW=(id,k,v)=>up({windows:wins.map(w=>w.id===id?{...w,[k]:v}:w)});
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <div style={{ fontWeight:600 }}>Προμέτρηση — {wins.length} κουφώματα</div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button style={btn(C.accent)} onClick={addWin}>+ Κούφωμα</button>
+          <button style={btn(C.green)} onClick={()=>up({status:"analysis"})}>✓ Ολοκλήρωση</button>
+          <button style={btn(C.border,C.textPri)} onClick={()=>up({status:"premeasure"})}>↩ Διόρθωση</button>
+        </div>
+      </div>
+      {wins.length===0&&<div style={{ ...card, color:C.textMut, textAlign:"center" }}>Δεν υπάρχουν κουφώματα.</div>}
+      {wins.map(w=>(
+        <div key={w.id} style={{ ...card, marginBottom:10 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, paddingBottom:8, borderBottom:`1px dashed ${C.border}` }}>
+            <span style={{ fontWeight:600, color:C.accent }}>Κούφωμα {w.no}</span>
+            <button style={{ ...btn(C.red), padding:"2px 8px", fontSize:11 }} onClick={()=>del(w.id)}>✕</button>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
+            <F label="Ύψος (m)" value={w.height} onChange={v=>upW(w.id,"height",v)} ph="0,00"/>
+            <F label="Πλάτος (m)" value={w.width} onChange={v=>upW(w.id,"width",v)} ph="0,00"/>
+            <div><label style={lbl}>Τύπος</label><select style={inp} value={w.type} onChange={e=>{upW(w.id,"type",e.target.value);upW(w.id,"typology","");}}>{Object.keys(TYPOLOGIES).map(t=><option key={t}>{t}</option>)}</select></div>
+            <Sel label="Σειρά" value={w.series} onChange={v=>upW(w.id,"series",v)} opts={SERIES}/>
+            <div><label style={lbl}>Τυπολογία</label><select style={inp} value={w.typology} onChange={e=>upW(w.id,"typology",e.target.value)}><option value="">—</option>{(TYPOLOGIES[w.type]||[]).map(t=><option key={t}>{t}</option>)}</select></div>
+            <Sel label="Υάλωση" value={w.glass} onChange={v=>upW(w.id,"glass",v)} opts={GLASSES}/>
+            <Sel label="Χρώμα" value={w.color} onChange={v=>upW(w.id,"color",v)} opts={COLORS}/>
+            <Sel label="Ρολό" value={w.rolo} onChange={v=>upW(w.id,"rolo",v)} opts={ROLO}/>
+            <Sel label="Κανάλι" value={w.kanali} onChange={v=>upW(w.id,"kanali",v)} opts={KANALI}/>
+            <F label="Ύψος Κουτιού (m)" value={w.boxH} onChange={v=>upW(w.id,"boxH",v)} ph="0,00"/>
+            <Sel label="Μοτέρ" value={w.motor} onChange={v=>upW(w.id,"motor",v)} opts={MOTOR}/>
+            <Sel label="Τρόπος Ανοίγματος" value={w.anoigma} onChange={v=>upW(w.id,"anoigma",v)} opts={ANOIGMA}/>
+            <Sel label="Πρεβάζι" value={w.prebazi} onChange={v=>upW(w.id,"prebazi",v)} opts={PREBAZI}/>
+          </div>
+          <div style={{ marginTop:8 }}><label style={lbl}>Παρατηρήσεις</label><textarea style={{ ...inp, minHeight:44, resize:"vertical" }} value={w.notes} onChange={e=>upW(w.id,"notes",e.target.value)}/></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Tab Ανάλυση ───────────────────────────────────────────────────────────────
+
+function TabAnalysis({ project, up }) {
+  const [aiLoading,setAiLoading]=useState(false);
+  const [aiRes,setAiRes]=useState(null);
+  const wins=project.windows||[];
+  const upW=(id,k,v)=>up({windows:wins.map(w=>w.id===id?{...w,[k]:v}:w)});
+  const runAI = async () => {
+    setAiLoading(true);
+    setAiRes(null);
+    const desc = wins.map(w => `Κούφωμα ${w.no}: ${w.type} ${w.series} ${w.typology} ${w.width}x${w.height}`).join("; ");
+    try {
+      const result = await API.callAI([
+        {
+          role: "user",
+          content: `Ειδικός κατασκευαστής αλουμινίου. Έλεγξε κατασκευές. ΜΟΝΟ JSON: {"checks":[{"no":1,"status":"ok|warning|error","message":"...","suggestions":[]}]}
+${desc}`
+        }
+      ], 600);
+      const parsed = parseFirstJSONObject(extractAIText(result), { checks: [] });
+      setAiRes(Array.isArray(parsed.checks) ? parsed.checks : []);
+    } catch (error) {
+      console.error("AI analysis error:", error);
+      setAiRes([{ no: "-", status: "error", message: "Αποτυχία AI ελέγχου", suggestions: [] }]);
+    }
+    setAiLoading(false);
+  };
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <div style={{ fontWeight:600 }}>Ανάλυση Κατασκευών</div>
+        <button style={{ ...btn(C.accent), opacity:aiLoading?0.7:1 }} onClick={runAI} disabled={aiLoading}>{aiLoading?"AI Ελέγχει...":"🤖 AI Έλεγχος"}</button>
+      </div>
+      {aiRes&&<div style={{ ...card, marginBottom:12, border:`1px solid ${C.accent}44` }}>
+        {aiRes.map((r,i)=><div key={i} style={{ padding:"5px 0", borderBottom:`1px solid ${C.border}`, fontSize:13 }}>
+          <span style={{ color:r.status==="ok"?C.green:r.status==="warning"?C.warn:C.red, fontWeight:600 }}>{r.status==="ok"?"✓":"⚠"} Κ{r.no}: </span>
+          {r.message} {r.suggestions?.length>0&&<span style={{ color:C.blue }}> → {r.suggestions.join(", ")}</span>}
+        </div>)}
+      </div>}
+      {wins.map(w=>(
+        <div key={w.id} style={{ ...card, marginBottom:10 }}>
+          <div style={{ fontWeight:600, color:C.accent, marginBottom:10 }}>Κούφωμα {w.no} — {w.type} {w.series} {w.typology}</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
+            <div><label style={lbl}>Κωδ. Κάσας</label><select style={inp} value={w.kasaCode||""} onChange={e=>upW(w.id,"kasaCode",e.target.value)}><option value="">—</option>{(KASA[w.series]||[]).map(k=><option key={k}>{k}</option>)}</select></div>
+            <div><label style={lbl}>Κωδ. Φύλλου</label><select style={inp} value={w.fyloCode||""} onChange={e=>upW(w.id,"fyloCode",e.target.value)}><option value="">—</option>{(FYLO[w.series]||[]).map(k=><option key={k}>{k}</option>)}</select></div>
+            <Sel label="Τελική Υάλωση" value={w.glass} onChange={v=>upW(w.id,"glass",v)} opts={GLASSES}/>
+            <Sel label="Τελικό Χρώμα"  value={w.color}  onChange={v=>upW(w.id,"color",v)}  opts={COLORS}/>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Tab Προσφορά ──────────────────────────────────────────────────────────────
+function TabOffer({ project, client }) {
+  const wins=project.windows||[];
+  const price=w=>{ const h=+w.height||0,wi=+w.width||0; return (h+wi)*2*1.5*3.9+h*wi*30+25+(w.rolo!=="—"?60:0)+(w.motor!=="—"?120:0); };
+  const sub=wins.reduce((s,w)=>s+price(w),0), vat=sub*VAT, tot=sub+vat;
+  const print=()=>{
+    const rows=wins.map((w,i)=>`<tr><td>${i+1}</td><td>${w.typology||w.type}</td><td>${w.series}</td><td>${w.width}×${w.height}</td><td>${w.glass}</td><td>${w.color}</td><td style="text-align:right">${price(w).toFixed(2)} €</td></tr>`).join("");
+    const html=`<!DOCTYPE html><html lang="el"><head><meta charset="UTF-8"><title>Προσφορά</title><style>body{font-family:Arial;padding:24px;font-size:12px}table{width:100%;border-collapse:collapse;margin-bottom:16px}th{background:#2d3239;color:#e8e4de;padding:8px}td{padding:7px;border-bottom:1px solid #eee}.tot{float:right;width:220px;border:1px solid #ddd;border-radius:6px}.tot td{padding:8px 12px}.tot tr:last-child{background:#c17f4e;color:#fff;font-weight:700}</style></head><body><h2 style="color:#c17f4e">Προσφορά — ${client?.name||""}</h2><p style="color:#666">${project.title} · ${project.address}</p><table><thead><tr><th>#</th><th>Τυπολογία</th><th>Σειρά</th><th>Διαστ.</th><th>Υάλωση</th><th>Χρώμα</th><th>Τιμή</th></tr></thead><tbody>${rows}</tbody></table><table class="tot"><tr><td>Καθαρή Αξία</td><td>${sub.toFixed(2)} €</td></tr><tr><td>+ ΦΠΑ 24%</td><td>${vat.toFixed(2)} €</td></tr><tr><td>ΣΥΝΟΛΟ</td><td>${tot.toFixed(2)} €</td></tr></table></body></html>`;
+    const w2=window.open("","_blank"); if(w2){w2.document.write(html);w2.document.close();setTimeout(()=>w2.print(),400);}
+  };
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+        <div style={{ fontWeight:600 }}>Προσφορά — {client?.name}</div>
+        <button style={btn(C.green)} onClick={print} disabled={wins.length===0}>🖨 Εκτύπωση PDF</button>
+      </div>
+      {wins.length===0?<div style={{ ...card, color:C.textMut, textAlign:"center" }}>Δεν υπάρχουν κουφώματα.</div>:(
+        <>
+          <table style={{ width:"100%", borderCollapse:"collapse", background:C.card, borderRadius:10, overflow:"hidden", fontSize:12 }}>
+            <thead><tr>{["#","Τυπολογία","Σειρά","Διαστ.","Υάλωση","Χρώμα","Τιμή €"].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>{wins.map((w,i)=><tr key={w.id}><td style={td}>{i+1}</td><td style={td}>{w.typology||w.type}</td><td style={td}>{w.series}</td><td style={td}>{w.width}×{w.height}</td><td style={td}>{w.glass}</td><td style={td}>{w.color}</td><td style={{ ...td, fontWeight:600, color:C.accent }}>{price(w).toFixed(2)}</td></tr>)}</tbody>
+          </table>
+          <div style={{ ...card, maxWidth:260, marginLeft:"auto", marginTop:12 }}>
+            {[["Καθαρή Αξία",sub.toFixed(2),C.textPri],["+ ΦΠΑ 24%",vat.toFixed(2),C.textSec],["ΣΥΝΟΛΟ",tot.toFixed(2),C.accent]].map(([l,v,c])=>(
+              <div key={l} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:l!=="ΣΥΝΟΛΟ"?`1px solid ${C.border}`:"none", color:c, fontWeight:l==="ΣΥΝΟΛΟ"?700:400, fontSize:l==="ΣΥΝΟΛΟ"?15:13 }}>
+                <span>{l}</span><span>{v} €</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Tab Παραγγελίες ────────────────────────────────────────────────────────────
+function TabOrders({ project, suppliers }) {
+  const [active, setActive] = useState("profiles");
+  const [selSup, setSelSup] = useState({});
+  const [modal,  setModal]  = useState(null); // { type: 'print'|'email'|'viber', content, title }
+
+  const wins = project.windows||[];
+
+  // ── Παραγγελία Προφίλ (από Προμέτρηση) ──
+  const profileRows = wins.flatMap(w => [
+    { prof:w.kasaCode||`${w.series}-ΚΑΣΑ`, type:"Κάσα Οριζόντια", len:(+w.width||0).toFixed(3), qty:2, win:w.no },
+    { prof:w.kasaCode||`${w.series}-ΚΑΣΑ`, type:"Κάσα Κατακόρυφη", len:(+w.height||0).toFixed(3), qty:2, win:w.no },
+    { prof:w.fyloCode||`${w.series}-ΦΥΛΛΟ`, type:"Φύλλο Οριζόντιο", len:((+w.width||0)-0.04).toFixed(3), qty:2, win:w.no },
+    { prof:w.fyloCode||`${w.series}-ΦΥΛΛΟ`, type:"Φύλλο Κατακόρυφο", len:((+w.height||0)-0.04).toFixed(3), qty:2, win:w.no },
+  ]);
+
+  // ── Παραγγελία Τζαμιών (από Κύρια Μέτρηση) ──
+  const glassRows = (project.kmWins||wins).map(w => {
+    const h=+w.height||0, wi=+w.width||0;
+    const leaves=w.typology?.includes("ΤΡΙΦΥΛΛΟ")?3:w.typology?.includes("ΔΙΦΥΛΛΟ")?2:1;
+    return { spec:w.glass, w:((wi/leaves)-0.02).toFixed(3), h:(h-0.02).toFixed(3), qty:leaves, win:w.no, color:w.color };
+  }).filter(r=>r.w>0);
+
+  // ── Παραγγελία Ρολών (από Κύρια Μέτρηση) ──
+  const rolaRows = (project.kmWins||wins).filter(w=>w.rolo&&w.rolo!=="—").map(w=>({
+    type:w.rolo, width:(+w.width||0).toFixed(3), series:w.series, motor:w.motor, win:w.no
+  }));
+
+  // ── Παραγγελία Εξαρτημάτων (από Κύρια Μέτρηση) ──
+  const accRows = (project.kmWins||wins).flatMap(w => {
+    const leaves=w.typology?.includes("ΤΡΙΦΥΛΛΟ")?3:w.typology?.includes("ΔΙΦΥΛΛΟ")?2:1;
+    const isAnoig=w.type==="ΑΝΟΙΓΟΜΕΝΟ"||w.type==="ΠΟΡΤΑ";
+    const isSyr=w.type==="ΣΥΡΟΜΕΝΟ";
+    const items=[];
+    if(isAnoig){ items.push({name:"Μεντεσέδες",qty:leaves*2,unit:"τεμ",win:w.no}); items.push({name:"Κλειδαριά",qty:leaves,unit:"τεμ",win:w.no}); items.push({name:"Χερούλι",qty:leaves,unit:"τεμ",win:w.no}); }
+    if(isSyr){ items.push({name:"Ράουλα",qty:leaves*2,unit:"τεμ",win:w.no}); items.push({name:"Αντιανεμικό",qty:1,unit:"τεμ",win:w.no}); }
+    items.push({name:"Παρεμβύσματα",qty:((2*(+w.height||0)+2*(+w.width||0))).toFixed(1),unit:"m",win:w.no});
+    return items;
+  });
+
+  const ORDERS = {
+    profiles:    { label:"Παραγγελία Προφίλ",      icon:"🔩", note:"Από Προμέτρηση", color:C.blue,    rows:profileRows,    cols:["Κούφ.","Προφίλ","Τύπος","Μήκος (m)","Τεμ."],    row:r=>[r.win,r.prof,r.type,r.len,r.qty] },
+    glass:       { label:"Παραγγελία Τζαμιών",     icon:"🪟", note:"Από Κύρια Μέτρηση", color:C.blue, rows:glassRows,     cols:["Κούφ.","Υάλωση","Πλάτος (m)","Ύψος (m)","Τεμ.","Χρώμα"], row:r=>[r.win,r.spec,r.w,r.h,r.qty,r.color] },
+    rola:        { label:"Παραγγελία Ρολών",        icon:"🌀", note:"Από Κύρια Μέτρηση", color:C.accent,rows:rolaRows,     cols:["Κούφ.","Τύπος Ρολού","Πλάτος (m)","Σειρά","Μοτέρ"], row:r=>[r.win,r.type,r.width,r.series,r.motor] },
+    accessories: { label:"Παραγγελία Εξαρτημάτων", icon:"⚙️", note:"Από Κύρια Μέτρηση", color:C.green, rows:accRows,    cols:["Κούφ.","Εξάρτημα","Ποσότητα","Μονάδα"], row:r=>[r.win,r.name,r.qty,r.unit] },
+  };
+
+  const o = ORDERS[active];
+  const supType = { profiles:"Προφίλ", glass:"Τζάμια", rola:"Ρολά", accessories:"Εξαρτήματα" };
+  const filtSup = suppliers.filter(s=>s.type===supType[active]||s.type==="Γενικός");
+  const supId   = selSup[active]||filtSup[0]?.id||"";
+  const sup     = suppliers.find(s=>s.id===supId);
+
+  const buildMsg = () => {
+    const lines = o.rows.map((r,i)=>o.row(r).join(" | "));
+    return `Παραγγελία: ${o.label}\nΈργο: ${project.title} (${project.code})\n\n${o.cols.join(" | ")}\n${lines.join("\n")}\n\nΗμερομηνία: ${today()}`;
+  };
+
+  const printContent = () => {
+    const rows = o.rows.map(r=>`<tr>${o.row(r).map(c=>`<td>${c}</td>`).join("")}</tr>`).join("");
+    const html=`<!DOCTYPE html><html lang="el"><head><meta charset="UTF-8"><title>${o.label} — ${project.code}</title><style>
+      *{box-sizing:border-box}
+      body{font-family:Arial,sans-serif;padding:32px;font-size:12px;color:#222;background:#fff}
+      .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #c17f4e}
+      .co{font-size:18px;font-weight:700;color:#c17f4e}.co-sub{font-size:11px;color:#888;margin-top:2px}
+      .doc-title{font-size:15px;font-weight:700;text-align:right}.doc-meta{font-size:11px;color:#666;margin-top:3px}
+      .sup-box{background:#f5f3f0;border-left:4px solid #c17f4e;padding:10px 14px;border-radius:6px;margin-bottom:18px;font-size:12px}
+      table{width:100%;border-collapse:collapse;margin-bottom:20px}
+      thead tr{background:#2d3239;color:#e8e4de}
+      th{padding:8px 10px;text-align:left;font-size:12px}
+      td{padding:7px 10px;border-bottom:1px solid #eee;font-size:12px}
+      tr:nth-child(even) td{background:#faf9f8}
+      td:first-child{color:#888}td:nth-child(2){font-weight:600;color:#c17f4e}
+      .footer{margin-top:30px;font-size:10px;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:10px}
+      .print-btn{margin-bottom:20px;padding:9px 20px;background:#c17f4e;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600}
+      @media print{.print-btn{display:none}body{padding:12mm}}
+      @page{size:A4;margin:12mm}
+    </style></head><body>
+    <button class="print-btn" onclick="window.print()">🖨 Εκτύπωση / Αποθήκευση PDF</button>
+    <div class="top">
+      <div><div class="co">FlowOS</div><div class="co-sub">Σύστημα ERP Αλουμινίου & Κουφωμάτων</div></div>
+      <div><div class="doc-title">${o.icon} ${o.label}</div><div class="doc-meta">${project.code} · ${today()}</div></div>
+    </div>
+    <p style="margin-bottom:14px;color:#555;font-size:12px"><strong>${project.title}</strong>${project.address?` · ${project.address}`:""}</p>
+    ${sup?`<div class="sup-box"><strong>Προμηθευτής:</strong> ${sup.name}${sup.contact?` · ${sup.contact}`:""}${sup.phone?` · ${sup.phone}`:""}${sup.email?` · ${sup.email}`:""}${sup.viber?` · Viber: ${sup.viber}`:""}</div>`:""}
+    <table><thead><tr>${o.cols.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
+    <div class="footer">Παράγεται από FlowOS · ${today()}</div>
+    </body></html>`;
+    // Κατέβασε ως αρχείο HTML
+    const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `${o.label.replace(/ /g,"_")}_${project.code}_${today().replace(/\//g,"-")}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setModal({ type:"download_info", title:`${o.icon} ${o.label}` });
+  };
+
+  const sendEmail = () => {
+    const msg = `Θέμα: ${o.label} — ${project.code}\n\n${buildMsg()}`;
+    setModal({ type:"email", title:"✉️ Αποστολή Email", msg, to: sup?.email||"" });
+  };
+
+  const sendViber = () => {
+    setModal({ type:"viber", title:"📱 Αποστολή Viber", msg: buildMsg(), phone: sup?.viber||"" });
+  };
+
+  return (
+    <div>
+      <div style={{ fontWeight:600, marginBottom:14 }}>Παραγγελίες Υλικών</div>
+
+      {/* Επιλογή τύπου παραγγελίας */}
+      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+        {Object.entries(ORDERS).map(([k,v])=>(
+          <button key={k} onClick={()=>setActive(k)} style={{ ...btn(active===k?v.color:C.border, active===k?"#fff":C.textSec), display:"flex", alignItems:"center", gap:6 }}>
+            {v.icon} {v.label.replace("Παραγγελία ","")}
+          </button>
+        ))}
+      </div>
+
+      {/* Κεφαλίδα παραγγελίας */}
+      <div style={{ ...card, marginBottom:12, border:`1px solid ${o.color}44` }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:10 }}>
+          <div>
+            <div style={{ fontWeight:600, fontSize:15, color:o.color }}>{o.icon} {o.label}</div>
+            <div style={{ fontSize:12, color:C.textSec, marginTop:2 }}>{o.note} · {o.rows.length} γραμμές</div>
+          </div>
+          <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+            {/* Επιλογή προμηθευτή */}
+            {filtSup.length>0&&<div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <label style={{ ...lbl, marginBottom:0, whiteSpace:"nowrap" }}>Προμηθευτής:</label>
+              <select style={{ ...inp, width:"auto", padding:"5px 9px", fontSize:12 }} value={supId} onChange={e=>setSelSup(s=>({...s,[active]:e.target.value}))}>
+                {filtSup.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>}
+            <button style={{ ...btn(C.panel,C.textPri), fontSize:12, border:`1px solid ${C.border}` }} onClick={printContent}>🖨 Εκτύπωση</button>
+            <button style={{ ...btn("#4a90d9"), fontSize:12 }} onClick={sendEmail} disabled={!sup?.email}>✉️ Email</button>
+            <button style={{ ...btn("#7b5ea7"), fontSize:12 }} onClick={sendViber} disabled={!sup?.viber}>📱 Viber</button>
+          </div>
+        </div>
+        {sup&&<div style={{ marginTop:10, padding:"8px 12px", background:C.bg, borderRadius:7, fontSize:12, color:C.textSec }}>
+          <strong style={{ color:C.textPri }}>{sup.name}</strong> · {sup.contact} · {sup.phone} · {sup.email}
+          {sup.viber&&<span> · Viber: {sup.viber}</span>}
+        </div>}
+      </div>
+
+      {/* Πίνακας παραγγελίας */}
+      {o.rows.length===0
+        ? <div style={{ ...card, color:C.textMut, textAlign:"center" }}>Δεν υπάρχουν δεδομένα. {o.note.includes("Κύρια")?"Συμπληρώστε την Κύρια Μέτρηση.":"Συμπληρώστε την Προμέτρηση."}</div>
+        : <table style={{ width:"100%", borderCollapse:"collapse", background:C.card, borderRadius:10, overflow:"hidden" }}>
+            <thead><tr>{o.cols.map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>{o.rows.map((r,i)=><tr key={i}>{o.row(r).map((c,j)=><td key={j} style={{ ...td, fontWeight:j===1?500:400, color:j===1?C.accent:C.textPri }}>{c}</td>)}</tr>)}</tbody>
+          </table>
+      }
+
+      {/* Modal εκτύπωσης / email / viber */}
+      {modal && (
+        <div onClick={()=>setModal(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:C.panel, borderRadius:12, padding:24, width:"min(660px,95vw)", maxHeight:"85vh", overflow:"auto", border:`1px solid ${C.border}` }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <div style={{ fontWeight:600, fontSize:15, color:C.accent }}>{modal.title}</div>
+              <button style={{ ...btn(C.border,C.textSec), padding:"4px 10px", fontSize:12 }} onClick={()=>setModal(null)}>✕ Κλείσιμο</button>
+            </div>
+
+            {modal.type==="print_copy" && (
+              <div>
+                <div style={{ fontSize:13, color:C.textSec, marginBottom:10, lineHeight:1.7 }}>
+                  <strong style={{ color:C.textPri }}>3 βήματα:</strong><br/>
+                  1. Πατήστε <strong style={{ color:C.accent }}>📋 Αντιγραφή HTML</strong><br/>
+                  2. Ανοίξτε ένα κενό αρχείο .txt, κάντε Paste, αποθηκεύστε ως <strong style={{ color:C.textPri }}>παραγγελια.html</strong><br/>
+                  3. Ανοίξτε το αρχείο με Chrome/Safari → <strong style={{ color:C.accent }}>🖨 Εκτύπωση / PDF</strong>
+                </div>
+                <button style={{ ...btn(C.accent), marginBottom:12 }} onClick={()=>{ navigator.clipboard?.writeText(modal.html).then(()=>{ const b=document.getElementById("cpbtn"); if(b){b.textContent="✓ Αντιγράφηκε!";b.style.background=C.green;} }); }} id="cpbtn">
+                  📋 Αντιγραφή HTML
+                </button>
+                <textarea readOnly value={modal.html} style={{ ...inp, minHeight:220, fontFamily:"monospace", fontSize:11, resize:"vertical", display:"block" }}/>
+              </div>
+            )}
+
+            {modal.type==="email" && (
+              <div>
+                <div style={{ fontSize:12, color:C.textSec, marginBottom:8 }}>
+                  Αντιγράψτε το παρακάτω μήνυμα και στείλτε το στο: <strong style={{ color:C.accent }}>{modal.to||"(δεν υπάρχει email)"}</strong>
+                </div>
+                <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                  <button style={btn(C.accent)} onClick={()=>navigator.clipboard?.writeText(modal.msg)}>📋 Αντιγραφή</button>
+                  {modal.to && <button style={btn("#4a90d9")} onClick={()=>{ const a=document.createElement("a"); a.href=`mailto:${modal.to}?subject=${encodeURIComponent("Παραγγελία — "+project.code)}&body=${encodeURIComponent(modal.msg)}`; document.body.appendChild(a); a.click(); document.body.removeChild(a); }}>✉️ Άνοιγμα Mail App</button>}
+                </div>
+                <textarea readOnly value={modal.msg} style={{ ...inp, minHeight:260, fontFamily:"monospace", fontSize:12, resize:"vertical" }}/>
+              </div>
+            )}
+
+            {modal.type==="viber" && (
+              <div>
+                <div style={{ fontSize:12, color:C.textSec, marginBottom:8 }}>
+                  Αντιγράψτε το παρακάτω μήνυμα και στείλτε το στο Viber: <strong style={{ color:"#7b5ea7" }}>{modal.phone||"(δεν υπάρχει αριθμός)"}</strong>
+                </div>
+                <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                  <button style={btn(C.accent)} onClick={()=>navigator.clipboard?.writeText(modal.msg)}>📋 Αντιγραφή</button>
+                  {modal.phone && <button style={btn("#7b5ea7")} onClick={()=>{ const a=document.createElement("a"); a.href=`viber://chat?number=${modal.phone}`; document.body.appendChild(a); a.click(); document.body.removeChild(a); }}>📱 Άνοιγμα Viber</button>}
+                </div>
+                <textarea readOnly value={modal.msg} style={{ ...inp, minHeight:260, fontFamily:"monospace", fontSize:12, resize:"vertical" }}/>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tab Κύρια Μέτρηση ──────────────────────────────────────────────────────────
+function TabKyria({ project, up }) {
+  const wins = project.windows||[];
+  const km   = project.kmWins||wins.map(w=>({...w}));
+  const upK  = (id,k,v) => up({ kmWins: km.map(w=>w.id===id?{...w,[k]:v}:w) });
+
+  const leaves = typology => typology?.includes("ΤΡΙΦΥΛΛΟ")?3:typology?.includes("ΔΙΦΥΛΛΟ")?2:1;
+
+  return (
+    <div>
+      <div style={{ fontWeight:600, marginBottom:4 }}>Κύρια Μέτρηση</div>
+      <div style={{ fontSize:12, color:C.textSec, marginBottom:14 }}>Οριστικές διαστάσεις → κοπές προφίλ, τζάμια, εξαρτήματα</div>
+      {wins.length===0&&<div style={{ color:C.textMut }}>Δεν υπάρχουν κουφώματα.</div>}
+      {km.map(w=>{
+        const h=+w.height||0, wi=+w.width||0;
+        const lv=leaves(w.typology);
+        const cuts=[
+          { prof:w.kasaCode||`${w.series}-ΚΑΣΑ`, type:"Κάσα Οριζόντια", len:wi.toFixed(3), qty:2 },
+          { prof:w.kasaCode||`${w.series}-ΚΑΣΑ`, type:"Κάσα Κατακόρυφη", len:h.toFixed(3), qty:2 },
+          ...(!w.typology?.includes("ΣΤΑΘΕΡΟ")
+            ? [{ prof:w.fyloCode||`${w.series}-ΦΥΛΛΟ`, type:"Φύλλο Οριζόντιο", len:(wi-0.04).toFixed(3), qty:2 },
+               { prof:w.fyloCode||`${w.series}-ΦΥΛΛΟ`, type:"Φύλλο Κατακόρυφο", len:(h-0.04).toFixed(3), qty:2 }]
+            : []),
+          ...(w.typology?.includes("ΤΑΦ")
+            ? [{ prof:`${w.series}-ΜΕΣΟΒΕΡΓΑ`, type:"Μεσόβεργα", len:(h-0.02).toFixed(3), qty:1 }]
+            : []),
+        ];
+        const glass = h&&wi ? { spec:w.glass, w:((wi/lv)-0.02).toFixed(3), h:(h-0.02).toFixed(3), qty:lv } : null;
+        const isAnoig=w.type==="ΑΝΟΙΓΟΜΕΝΟ"||w.type==="ΠΟΡΤΑ", isSyr=w.type==="ΣΥΡΟΜΕΝΟ";
+        const acc=[
+          ...(isAnoig?[{n:"Μεντεσέδες",q:lv*2,u:"τεμ"},{n:"Κλειδαριά",q:lv,u:"τεμ"},{n:"Χερούλι",q:lv,u:"τεμ"}]:[]),
+          ...(isSyr?[{n:"Ράουλα",q:lv*2,u:"τεμ"},{n:"Αντιανεμικό",q:1,u:"τεμ"}]:[]),
+          {n:"Παρεμβύσματα",q:(2*h+2*wi).toFixed(1),u:"m"},
+        ];
+        return (
+          <div key={w.id} style={{ ...card, marginBottom:14 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10, paddingBottom:8, borderBottom:`1px dashed ${C.border}` }}>
+              <span style={{ fontWeight:600, color:C.accent }}>Κούφωμα {w.no} — {w.typology||w.type} — {w.series}</span>
+              <span style={badge(C.blue)}>{w.color}</span>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:12 }}>
+              <F label="Ύψος Οριστικό (m)" value={w.height} onChange={v=>upK(w.id,"height",v)} ph="0,00"/>
+              <F label="Πλάτος Οριστικό (m)" value={w.width}  onChange={v=>upK(w.id,"width",v)}  ph="0,00"/>
+              <F label="Κωδ. Κάσας"  value={w.kasaCode||""} onChange={v=>upK(w.id,"kasaCode",v)}/>
+              <F label="Κωδ. Φύλλου" value={w.fyloCode||""} onChange={v=>upK(w.id,"fyloCode",v)}/>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
+              <div>
+                <div style={{ fontSize:11, color:C.textSec, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.05em" }}>Κοπές Προφίλ</div>
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                  <thead><tr>{["Κωδ.","Τύπος","m","Τεμ."].map(h2=><th key={h2} style={{ ...th, padding:"4px 6px" }}>{h2}</th>)}</tr></thead>
+                  <tbody>{cuts.map((c,i)=><tr key={i}><td style={{ ...td, padding:"4px 6px", fontSize:11, color:C.accent }}>{c.prof}</td><td style={{ ...td, padding:"4px 6px" }}>{c.type}</td><td style={{ ...td, padding:"4px 6px", fontWeight:600 }}>{c.len}</td><td style={{ ...td, padding:"4px 6px" }}>{c.qty}</td></tr>)}</tbody>
+                </table>
+              </div>
+              <div>
+                <div style={{ fontSize:11, color:C.textSec, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.05em" }}>Τζάμια</div>
+                {glass
+                  ? <div style={{ background:C.bg, borderRadius:8, padding:"10px 12px" }}>
+                      <div style={{ fontWeight:600, color:C.blue, marginBottom:4 }}>{glass.spec}</div>
+                      <div style={{ fontSize:13 }}>{glass.w} × {glass.h} m</div>
+                      <div style={{ fontSize:12, color:C.textSec, marginTop:2 }}>Ποσ.: <strong style={{ color:C.textPri }}>{glass.qty} τεμ.</strong></div>
+                    </div>
+                  : <div style={{ fontSize:12, color:C.textMut }}>Συμπληρώστε διαστάσεις</div>
+                }
+              </div>
+              <div>
+                <div style={{ fontSize:11, color:C.textSec, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.05em" }}>Εξαρτήματα</div>
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                  <thead><tr>{["Εξάρτημα","Ποσ.","Μον."].map(h2=><th key={h2} style={{ ...th, padding:"4px 6px" }}>{h2}</th>)}</tr></thead>
+                  <tbody>{acc.map((a,i)=><tr key={i}><td style={{ ...td, padding:"4px 6px" }}>{a.n}</td><td style={{ ...td, padding:"4px 6px", fontWeight:600, color:C.green }}>{a.q}</td><td style={{ ...td, padding:"4px 6px" }}>{a.u}</td></tr>)}</tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Tab Πληρωμές ──────────────────────────────────────────────────────────────
+function TabPayments({ project, up }) {
+  const [form,setForm]=useState({date:today(),method:"Κατάθεση",net:"",vat:""});
+  const [del,setDel]=useState(null); const [dc,setDc]=useState("");
+  const payments=project.payments||[], agr=project.agreement||{net:"",vatPct:"24"}, pp=project.payPlan||[];
+  const isCat=m=>m==="Κατάθεση";
+  const add=()=>{ up({payments:[...payments,{id:uid(),...form,net:+form.net,vat:isCat(form.method)?+form.vat:0}]}); setForm({date:today(),method:"Κατάθεση",net:"",vat:""}); };
+  const tNet=payments.reduce((s,p)=>s+(+p.net||0),0);
+  const tVat=payments.filter(p=>p.method==="Κατάθεση").reduce((s,p)=>s+(+p.vat||0),0);
+  const agrN=+agr.net||0, agrVat=agrN*(+agr.vatPct||24)/100, agrTot=agrN+agrVat;
+  return (
+    <div>
+      <div style={{ ...card, marginBottom:12 }}>
+        <div style={{ fontWeight:600, marginBottom:10 }}>Συμφωνία Έργου</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 80px 1fr 1fr", gap:10, alignItems:"end" }}>
+          <F label="Καθαρή Αξία €" value={agr.net} onChange={v=>up({agreement:{...agr,net:v}})} type="number"/>
+          <F label="ΦΠΑ %" value={agr.vatPct} onChange={v=>up({agreement:{...agr,vatPct:v}})} type="number"/>
+          <F label="ΦΠΑ €" value={agrN?agrVat.toFixed(2):""} readOnly/>
+          <F label="Σύνολο €" value={agrN?agrTot.toFixed(2):""} readOnly/>
+        </div>
+        {pp.length>0&&<div style={{ marginTop:12 }}>
+          <div style={{ fontSize:11, color:C.textSec, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.05em" }}>Τρόπος Πληρωμής — Στάδια</div>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            {pp.map((pl,i)=><div key={pl.id} style={{ display:"flex", gap:6, alignItems:"center", background:C.bg, padding:"6px 10px", borderRadius:8, fontSize:13 }}>
+              <span style={{ color:C.textSec, fontSize:11 }}>{pl.stage}</span>
+              <input type="number" style={{ ...inp, width:55, padding:"3px 6px" }} value={pl.pct} onChange={e=>{ const p=[...pp]; p[i]={...p[i],pct:+e.target.value}; up({payPlan:p}); }}/>
+              <span style={{ fontSize:11, color:C.textSec }}>%</span>
+              {agrN>0&&<span style={{ color:C.accent, fontSize:12, fontWeight:600 }}>{(agrTot*pl.pct/100).toFixed(2)} €</span>}
+            </div>)}
+          </div>
+          <div style={{ fontSize:11, marginTop:4, color:pp.reduce((s,p)=>s+p.pct,0)===100?C.green:C.red }}>Σύνολο: {pp.reduce((s,p)=>s+p.pct,0)}% {pp.reduce((s,p)=>s+p.pct,0)===100?"✓":""}</div>
+        </div>}
+      </div>
+      {del&&<ConfirmDel code={dc} onChange={setDc} onConfirm={()=>{ if(dc===CONFIRM){up({payments:payments.filter(p=>p.id!==del)});setDel(null);setDc(""); }}} onCancel={()=>{setDel(null);setDc("");}}/>}
+      <div style={{ ...card, display:"grid", gridTemplateColumns:"120px 150px 1fr 1fr auto", gap:10, alignItems:"end", marginBottom:12 }}>
+        <F label="Ημερομηνία" value={form.date} onChange={v=>setForm(f=>({...f,date:v}))}/>
+        <div><label style={lbl}>Τρόπος</label><select style={inp} value={form.method} onChange={e=>setForm(f=>({...f,method:e.target.value,vat:e.target.value==="Μετρητά"?"":f.vat}))}>{["Κατάθεση","Μετρητά","Επιταγή"].map(m=><option key={m}>{m}</option>)}</select></div>
+        <F label="Καθαρό €" value={form.net} onChange={v=>setForm(f=>({...f,net:v,vat:isCat(f.method)?(+v*VAT).toFixed(2):""}))} type="number"/>
+        <div><label style={lbl}>ΦΠΑ € {!isCat(form.method)&&<span style={{ color:C.textMut }}>(—)</span>}</label><input style={inp} type="number" value={form.vat} disabled={!isCat(form.method)} onChange={e=>setForm(f=>({...f,vat:e.target.value}))}/></div>
+        <button style={btn(C.accent)} onClick={add}>+ Προσθήκη</button>
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse", background:C.card, borderRadius:10, overflow:"hidden" }}>
+        <thead><tr>{["Ημ/νία","Τρόπος","Καθαρό €","ΦΠΑ €","Σύνολο €",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+        <tbody>
+          {payments.length===0&&<tr><td colSpan={6} style={{ ...td, textAlign:"center", color:C.textMut, padding:20 }}>Δεν υπάρχουν πληρωμές</td></tr>}
+          {payments.map(p=><tr key={p.id}>
+            <td style={td}>{p.date}</td>
+            <td style={td}><span style={badge(p.method==="Κατάθεση"?C.blue:p.method==="Μετρητά"?C.green:C.warn)}>{p.method}</span></td>
+            <td style={{ ...td, color:C.green, fontWeight:600 }}>{(+p.net||0).toFixed(2)}</td>
+            <td style={td}>{p.method==="Κατάθεση"?(+p.vat||0).toFixed(2):"—"}</td>
+            <td style={{ ...td, fontWeight:600 }}>{((+p.net||0)+(+p.vat||0)).toFixed(2)}</td>
+            <td style={td}><button style={{ ...btn(C.red), padding:"3px 8px", fontSize:11 }} onClick={()=>setDel(p.id)}>✕</button></td>
+          </tr>)}
+        </tbody>
+        {payments.length>0&&<tfoot><tr style={{ background:C.panel }}>
+          <td colSpan={2} style={{ ...td, fontWeight:600 }}>Σύνολα</td>
+          <td style={{ ...td, fontWeight:600, color:C.green }}>{tNet.toFixed(2)}</td>
+          <td style={{ ...td, fontWeight:600 }}>{tVat.toFixed(2)}</td>
+          <td style={{ ...td, fontWeight:600 }}>{(tNet+tVat).toFixed(2)}</td>
+          <td style={td}></td>
+        </tr></tfoot>}
+      </table>
+    </div>
+  );
+}
+
+// ── Tab Παραστατικά ───────────────────────────────────────────────────────────
+function TabInvoices({ project, up }) {
+  const [aiLoad,setAiLoad]=useState(false);
+  const invoices=project.invoices||[], payments=project.payments||[];
+  const totInv=invoices.reduce((s,i)=>s+(+i.amount||0),0);
+  const totCat=payments.filter(p=>p.method==="Κατάθεση").reduce((s,p)=>s+(+p.net||0)+(+p.vat||0),0);
+  const bal=totCat-totInv;
+  const handleFile=async(e)=>{
+    const f=e.target.files[0]; if(!f) return; setAiLoad(true);
+    const reader=new FileReader();
+    reader.onload=async(ev)=>{
+      try {
+        const b64=ev.target.result.split(",")[1];
+        const content=f.type.startsWith("image/")
+          ?[{type:"image",source:{type:"base64",media_type:f.type,data:b64}},{type:"text",text:'Παραστατικό. Βρες ποσό, ημερομηνία. ΜΟΝΟ JSON: {"amount":0,"date":""}'}]
+          :`Παραστατικό. Βρες ποσό ημερομηνία. ΜΟΝΟ JSON: {"amount":0,"date":""}`;
+        const result = await API.callAI([{ role:"user", content }], 200);
+        const parsed = parseFirstJSONObject(extractAIText(result), {});
+        up({invoices:[...invoices,{id:uid(),filename:f.name,amount:+parsed.amount||0,date:parsed.date||today()}]});
+      } catch { up({invoices:[...invoices,{id:uid(),filename:f.name,amount:0,date:today()}]}); }
+      setAiLoad(false);
+    };
+    reader.readAsDataURL(f);
+  };
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <div style={{ fontWeight:600 }}>Παραστατικά</div>
+        <label style={{ ...btn(C.accent), cursor:"pointer", opacity:aiLoad?0.7:1 }}>
+          {aiLoad?"AI Διαβάζει...":"📎 Επισύναψη Παραστατικού"}
+          <input type="file" accept="image/*,application/pdf" style={{ display:"none" }} onChange={handleFile} disabled={aiLoad}/>
+        </label>
+      </div>
+      <div style={{ ...card, fontSize:12, color:C.textSec, marginBottom:12 }}>Παραστατικά κόβονται μόνο για καταθέσεις · Σύνολο καταθέσεων: <strong style={{ color:C.blue }}>{totCat.toFixed(2)} €</strong></div>
+      <table style={{ width:"100%", borderCollapse:"collapse", background:C.card, borderRadius:10, overflow:"hidden", marginBottom:12 }}>
+        <thead><tr>{["Αρχείο","Ποσό €","Ημερομηνία",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+        <tbody>
+          {invoices.length===0&&<tr><td colSpan={4} style={{ ...td, textAlign:"center", color:C.textMut, padding:20 }}>Δεν υπάρχουν παραστατικά</td></tr>}
+          {invoices.map(i=><tr key={i.id}><td style={td}>📄 {i.filename}</td><td style={{ ...td,fontWeight:600,color:C.blue }}>{(+i.amount||0).toFixed(2)}</td><td style={td}>{i.date}</td><td style={td}><button style={{ ...btn(C.red),padding:"3px 8px",fontSize:11 }} onClick={()=>up({invoices:invoices.filter(x=>x.id!==i.id)})}>✕</button></td></tr>)}
+        </tbody>
+      </table>
+      {invoices.length>0&&<div style={{ ...card, maxWidth:280, marginLeft:"auto" }}>
+        {[["Καταθέσεις",totCat.toFixed(2),C.blue],["Κομμένα παραστατικά",totInv.toFixed(2),C.green],["Υπόλοιπο για παραστατικό",bal.toFixed(2),bal<0?C.red:C.accent]].map(([l,v,c])=>(
+          <div key={l} style={{ display:"flex", justifyContent:"space-between", padding:"6px 0", borderBottom:`1px solid ${C.border}`, color:C.textPri }}>
+            <span style={{ fontSize:13 }}>{l}</span><span style={{ fontWeight:600, color:c }}>{v} €</span>
+          </div>
+        ))}
+      </div>}
+    </div>
+  );
+}
+
+// ── Tab Πρόσθετα ──────────────────────────────────────────────────────────────
+function TabExtras({ project, up }) {
+  const [form,setForm]=useState({date:today(),description:"",method:"Κατάθεση",net:""});
+  const [del,setDel]=useState(null); const [dc,setDc]=useState("");
+  const extras=project.extras||[];
+  const add=()=>{ up({extras:[...extras,{id:uid(),...form,net:+form.net,vat:form.method==="Κατάθεση"?(+form.net*VAT):0}]}); setForm({date:today(),description:"",method:"Κατάθεση",net:""}); };
+  const tNet=extras.reduce((s,e)=>s+(+e.net||0),0);
+  const tVat=extras.filter(e=>e.method==="Κατάθεση").reduce((s,e)=>s+(+e.vat||0),0);
+  return (
+    <div>
+      <div style={{ fontWeight:600, marginBottom:12 }}>Πρόσθετες Εργασίες</div>
+      {del&&<ConfirmDel code={dc} onChange={setDc} onConfirm={()=>{ if(dc===CONFIRM){up({extras:extras.filter(e=>e.id!==del)});setDel(null);setDc("");} }} onCancel={()=>{setDel(null);setDc("");}}/>}
+      <div style={{ ...card, display:"grid", gridTemplateColumns:"120px 1fr 140px 1fr auto", gap:10, alignItems:"end", marginBottom:12 }}>
+        <F label="Ημερομηνία" value={form.date} onChange={v=>setForm(f=>({...f,date:v}))}/>
+        <F label="Περιγραφή" value={form.description} onChange={v=>setForm(f=>({...f,description:v}))}/>
+        <div><label style={lbl}>Τρόπος</label><select style={inp} value={form.method} onChange={e=>setForm(f=>({...f,method:e.target.value}))}>{["Κατάθεση","Μετρητά"].map(m=><option key={m}>{m}</option>)}</select></div>
+        <F label="Καθαρό €" value={form.net} onChange={v=>setForm(f=>({...f,net:v}))} type="number"/>
+        <button style={btn(C.accent)} onClick={add}>+ Προσθήκη</button>
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse", background:C.card, borderRadius:10, overflow:"hidden" }}>
+        <thead><tr>{["Ημ/νία","Περιγραφή","Τρόπος","Καθαρό €","ΦΠΑ €","Σύνολο €",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+        <tbody>
+          {extras.length===0&&<tr><td colSpan={7} style={{ ...td, textAlign:"center", color:C.textMut, padding:20 }}>Δεν υπάρχουν πρόσθετες εργασίες</td></tr>}
+          {extras.map(e=><tr key={e.id}><td style={td}>{e.date}</td><td style={td}>{e.description}</td><td style={td}><span style={badge(e.method==="Κατάθεση"?C.blue:C.green)}>{e.method}</span></td><td style={{ ...td,color:C.green,fontWeight:600 }}>{(+e.net||0).toFixed(2)}</td><td style={td}>{e.method==="Κατάθεση"?(+e.vat||0).toFixed(2):"—"}</td><td style={{ ...td,fontWeight:600 }}>{((+e.net||0)+(+e.vat||0)).toFixed(2)}</td><td style={td}><button style={{ ...btn(C.red),padding:"3px 8px",fontSize:11 }} onClick={()=>setDel(e.id)}>✕</button></td></tr>)}
+        </tbody>
+        {extras.length>0&&<tfoot><tr style={{ background:C.panel }}>
+          <td colSpan={3} style={{ ...td,fontWeight:600 }}>Σύνολα Πρόσθετων</td>
+          <td style={{ ...td,fontWeight:600,color:C.green }}>{tNet.toFixed(2)}</td>
+          <td style={{ ...td,fontWeight:600 }}>{tVat.toFixed(2)}</td>
+          <td style={{ ...td,fontWeight:600 }}>{(tNet+tVat).toFixed(2)}</td>
+          <td style={td}></td>
+        </tr></tfoot>}
+      </table>
+    </div>
+  );
+}
+
+// ── Suppliers ─────────────────────────────────────────────────────────────────
+function Suppliers({ suppliers, setSuppliers }) {
+  const [showNew,setShowNew]=useState(false);
+  const blank={name:"",contact:"",phone:"",email:"",viber:"",type:"Προφίλ",notes:""};
+  const [form,setForm]=useState(blank);
+  const [del,setDel]=useState(null); const [dc,setDc]=useState("");
+  const TYPES=["Προφίλ","Τζάμια","Ρολά","Εξαρτήματα","Γενικός"];
+  const save=()=>{ setSuppliers(s=>[...s,{id:uid(),...form}]); setForm(blank); setShowNew(false); };
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        <h2 style={{ margin:0, fontWeight:600 }}>Προμηθευτές</h2>
+        <button style={btn(C.accent)} onClick={()=>setShowNew(true)}>+ Νέος Προμηθευτής</button>
+      </div>
+      {showNew&&<div style={{ ...card, border:`1px solid ${C.accent}`, marginBottom:12 }}>
+        <div style={{ fontWeight:600, marginBottom:10 }}>Νέος Προμηθευτής</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+          <F label="Επωνυμία" value={form.name} onChange={v=>setForm(f=>({...f,name:v}))}/>
+          <F label="Υπεύθυνος" value={form.contact} onChange={v=>setForm(f=>({...f,contact:v}))}/>
+          <F label="Τηλέφωνο" value={form.phone} onChange={v=>setForm(f=>({...f,phone:v}))}/>
+          <F label="Ηλεκτρονικό Ταχυδρομείο" value={form.email} onChange={v=>setForm(f=>({...f,email:v}))}/>
+          <F label="Viber" value={form.viber} onChange={v=>setForm(f=>({...f,viber:v}))}/>
+          <div><label style={lbl}>Κατηγορία</label><select style={inp} value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+        </div>
+        <div style={{ display:"flex", gap:8 }}><button style={btn(C.accent)} onClick={save}>Αποθήκευση</button><button style={btn(C.border,C.textPri)} onClick={()=>setShowNew(false)}>Ακύρωση</button></div>
+      </div>}
+      {del&&<ConfirmDel code={dc} onChange={setDc} onConfirm={()=>{ if(dc===CONFIRM){setSuppliers(s=>s.filter(x=>x.id!==del));setDel(null);setDc("");} }} onCancel={()=>{setDel(null);setDc("");}}/>}
+      <table style={{ width:"100%", borderCollapse:"collapse", background:C.card, borderRadius:10, overflow:"hidden" }}>
+        <thead><tr>{["Επωνυμία","Υπεύθυνος","Τηλέφωνο","Ηλεκτρονικό Ταχυδρομείο","Viber","Κατηγορία",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+        <tbody>{suppliers.map(s=><tr key={s.id}>
+          <td style={{ ...td,fontWeight:500,color:C.accent }}>{s.name}</td>
+          <td style={td}>{s.contact}</td>
+          <td style={td}>{s.phone}</td>
+          <td style={td}>{s.email}</td>
+          <td style={td}>{s.viber||"—"}</td>
+          <td style={td}><span style={badge(C.accent)}>{s.type}</span></td>
+          <td style={td}><div style={{ display:"flex", gap:6 }}>
+            {s.email&&<button style={{ ...btn("#4a90d9"),padding:"3px 8px",fontSize:11 }} onClick={()=>window.open(`mailto:${s.email}`)}>✉️</button>}
+            {s.viber&&<button style={{ ...btn("#7b5ea7"),padding:"3px 8px",fontSize:11 }} onClick={()=>window.open(`viber://chat?number=${s.viber}`)}>📱</button>}
+            <button style={{ ...btn(C.red),padding:"3px 8px",fontSize:11 }} onClick={()=>setDel(s.id)}>✕</button>
+          </div></td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function Settings({ settings, setSettings }) {
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setSettings(s => ({ ...s, logo: ev.target.result }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div>
+      <h2 style={{ margin: "0 0 8px", fontWeight: 600 }}>Ρυθμίσεις</h2>
+      <p style={{ color: C.textSec, fontSize: 13, marginBottom: 20 }}>Ρυθμίσεις εταιρείας για παραστατικά και παραγγελίες</p>
+      
+      <div style={card}>
+        <div style={{ fontWeight: 600, marginBottom: 12, color: C.accent }}>🏢 Λογότυπο Εταιρείας</div>
+        <input type="file" accept="image/*" onChange={handleLogoUpload} style={{ marginBottom: 12 }} />
+        {settings.logo && (
+          <div style={{ marginTop: 10, padding: 10, background: '#fff', borderRadius: 8, display: 'inline-block' }}>
+            <img src={settings.logo} style={{ maxWidth: 200, maxHeight: 80, display: 'block' }} alt="Λογότυπο" />
+          </div>
+        )}
+      </div>
+
+      <div style={card}>
+        <div style={{ fontWeight: 600, marginBottom: 12 }}>📋 Πληροφορίες Εταιρείας</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <F label="Όνομα Εταιρείας" value={settings.companyName || ''} onChange={v => setSettings(s => ({ ...s, companyName: v }))} />
+          <F label="ΑΦΜ" value={settings.afm || ''} onChange={v => setSettings(s => ({ ...s, afm: v }))} />
+          <F label="ΔΟΥ" value={settings.doy || ''} onChange={v => setSettings(s => ({ ...s, doy: v }))} />
+          <F label="Τηλέφωνο" value={settings.phone || ''} onChange={v => setSettings(s => ({ ...s, phone: v }))} />
+          <F label="Ηλεκτρονικό Ταχυδρομείο" value={settings.email || ''} onChange={v => setSettings(s => ({ ...s, email: v }))} />
+          <F label="Ιστοσελίδα" value={settings.website || ''} onChange={v => setSettings(s => ({ ...s, website: v }))} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
+          <F label="Διεύθυνση" value={settings.address || ''} onChange={v => setSettings(s => ({ ...s, address: v }))} />
+          <F label="Πόλη" value={settings.city || ''} onChange={v => setSettings(s => ({ ...s, city: v }))} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── DB Admin ──────────────────────────────────────────────────────────────────
+function DBAdmin() {
+  const [showScanner, setShowScanner] = useState(false);
+
+  return (
+    <div>
+      <h2 style={{ margin:"0 0 8px", fontWeight:600 }}>Βάση Δεδομένων / Διαχείριση</h2>
+      <p style={{ color:C.textSec, fontSize:13, marginBottom:20 }}>Εισαγωγή σειρών, τυπολογιών, κάσων, φύλλων, τιμών. Το Catalog AI Scanner συμπληρώνει αυτόματα από φωτογραφίες.</p>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))", gap:12, marginBottom:16 }}>
+        {[["Σειρές","EOS60, ESS34, S77...","🔧"],["Τυπολογίες","Ανοιγόμενο, Συρόμενο...","📐"],["Κωδικοί Κάσας","EOS60-K60, S77-K1...","🔩"],["Κωδικοί Φύλλου","EOS60-F60...","🪟"],["Υαλώσεις","4+16+4, Low-E...","🫙"],["Χρώματα","RAL9016, Ανοδίωση...","🎨"],["Τιμές","€/kg ανά σειρά & χρώμα","💶"]].map(([t,d,ic])=>(
+          <div key={t} style={{ ...card, marginBottom:0 }}>
+            <div style={{ fontSize:18, marginBottom:6 }}>{ic}</div>
+            <div style={{ fontWeight:600, marginBottom:4, color:C.textPri }}>{t}</div>
+            <div style={{ fontSize:12, color:C.textSec, marginBottom:10 }}>{d}</div>
+            <button style={{ ...btn(C.border,C.textSec), width:"100%", fontSize:12, border:`1px solid ${C.border}` }}>Διαχείριση →</button>
+          </div>
+        ))}
+      </div>
+
+      {!showScanner ? (
+        <div style={{ ...card, border:`1px dashed ${C.accent}55`, textAlign:"center", padding:36 }}>
+          <div style={{ fontSize:28, marginBottom:8 }}>🤖</div>
+          <div style={{ fontWeight:600, fontSize:15, marginBottom:4, color:C.accent }}>Σαρωτής Καταλόγου AI</div>
+          <div style={{ fontSize:13, color:C.textSec, marginBottom:14 }}>Ανέβασε φωτογραφίες κατάλογου αλουμινίου (jpeg, png) → το AI εξάγει σειρές, προφίλ, κωδικούς, τιμές αυτόματα</div>
+          <button style={btn(C.accent)} onClick={() => setShowScanner(true)}>🔍 Εκκίνηση AI Scanner</button>
+        </div>
+      ) : (
+        <AIScanner onClose={() => setShowScanner(false)} />
+      )}
+    </div>
+  );
+}
+
+// ── AI Scanner Component ───────────────────────────────────────────────────────
+function AIScanner({ onClose }) {
+  const [files, setFiles] = useState([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [extractedData, setExtractedData] = useState(null);
+  const [error, setError] = useState(null);
+
+  const handleFileSelect = (e) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    setFiles(selectedFiles);
+    setError(null);
+    setExtractedData(null);
+  };
+
+  const handleAnalyze = async () => {
+    if (files.length === 0) {
+      setError('Παρακαλώ επιλέξτε τουλάχιστον μία φωτογραφία');
+      return;
+    }
+
+    if (!window.google || !window.google.script) {
+      setError('⚠️ Το Google Apps Script API δεν είναι διαθέσιμο. Βεβαιωθείτε ότι τρέχετε μέσω Google Apps Script.');
+      return;
+    }
+
+    setAnalyzing(true);
+    setError(null);
+
+    try {
+      const base64Images = await Promise.all(
+        files.map(file => {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const base64 = reader.result.split(',')[1];
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        })
+      );
+
+      console.log(`Analyzing ${base64Images.length} images...`);
+
+      const result = await new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          .analyzeAluminumCatalogImages(base64Images);
+      });
+
+      if (result.error) {
+        setError('Σφάλμα API: ' + result.error);
+      } else if (result.data) {
+        setExtractedData(result.data);
+      } else {
+        setError('Κανένα αποτέλεσμα από την ανάλυση');
+      }
+    } catch (err) {
+      setError('Σφάλμα κατά την ανάλυση: ' + err.toString());
+      console.error('Analysis error:', err);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!extractedData) return;
+
+    try {
+      setAnalyzing(true);
+      const result = await new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          .saveCatalogData(extractedData);
+      });
+
+      if (result.error) {
+        setError(result.error);
+      } else {
+        alert('✓ Δεδομένα αποθηκευμένα επιτυχώς!');
+        onClose();
+      }
+    } catch (err) {
+      setError('Σφάλμα κατά την αποθήκευση: ' + err.toString());
+      console.error('Save error:', err);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  return (
+    <div style={{ ...card, border:`1px solid ${C.accent}` }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+        <div style={{ fontWeight:600, fontSize:15 }}>🤖 Σαρωτής Καταλόγου AI</div>
+        <button style={{ ...btn(C.border, C.textSec), padding:"4px 10px", fontSize:12 }} onClick={onClose}>✕</button>
+      </div>
+
+      {!extractedData ? (
+        <>
+          <div style={{ marginBottom:16 }}>
+            <label style={lbl}>Επιλέξτε φωτογραφίες (έως 10)</label>
+            <input
+              type="file"
+              multiple
+              accept="image/*"
+              onChange={handleFileSelect}
+              style={{ ...inp, cursor:"pointer" }}
+              disabled={analyzing}
+            />
+            <div style={{ fontSize:12, color:C.textSec, marginTop:6 }}>
+              {files.length > 0 && `${files.length} φωτογραφία(ες) επιλεγμένη(ες)`}
+            </div>
+          </div>
+
+          {error && <div style={{ ...card, background:C.red+"22", border:`1px solid ${C.red}55`, color:C.red, marginBottom:12, fontSize:13 }}>{error}</div>}
+
+          <div style={{ display:"flex", gap:8 }}>
+            <button
+              style={btn(C.accent)}
+              onClick={handleAnalyze}
+              disabled={files.length === 0 || analyzing}
+            >
+              {analyzing ? "⏳ Ανάλυση..." : "🔍 Ανάλυση με AI"}
+            </button>
+            <button style={btn(C.border, C.textPri)} onClick={onClose}>Ακύρωση</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ maxHeight:"400px", overflowY:"auto", marginBottom:16, padding:12, background:C.bg, borderRadius:8, fontSize:12 }}>
+            <pre style={{ margin:0, color:C.textPri, fontFamily:"monospace" }}>
+              {JSON.stringify(extractedData, null, 2)}
+            </pre>
+          </div>
+
+          {error && <div style={{ ...card, background:C.red+"22", border:`1px solid ${C.red}55`, color:C.red, marginBottom:12, fontSize:13 }}>{error}</div>}
+
+          <div style={{ display:"flex", gap:8 }}>
+            <button style={btn(C.green)} onClick={handleSave}>✓ Αποθήκευση</button>
+            <button style={btn(C.border, C.textPri)} onClick={() => { setExtractedData(null); setFiles([]); }}>← Επιστροφή</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // RENDER
+    // ══════════════════════════════════════════════════════════════════════════
+    
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
