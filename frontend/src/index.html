@@ -153,7 +153,14 @@ const SEED_PROJECTS = [{
   agreement:{ net:"", vatPct:"24" },
   payPlan:[{id:uid(),stage:"Προκαταβολή",pct:50},{id:uid(),stage:"Αρχή τοποθέτησης",pct:20},{id:uid(),stage:"Αποπεράτωση",pct:30}],
   kmWins: [],
-  contract:{ code:"ΣΥΜ-001", terms:"" }
+  contract:{ code:"ΣΥΜ-001", terms:"" },
+  tasks:[
+    {id:uid(),title:"Προμέτρηση",status:"done",dueDate:"2026-04-15",priority:"high",assignee:"Αλ."},
+    {id:uid(),title:"Ανάλυση & Προσφορά",status:"in_progress",dueDate:"2026-04-20",priority:"high",assignee:"Μαρ."},
+    {id:uid(),title:"Λήψη Παραγγελίας",status:"pending",dueDate:"2026-04-25",priority:"medium",assignee:"Αλ."},
+    {id:uid(),title:"Παραγωγή",status:"pending",dueDate:"2026-05-05",priority:"medium",assignee:"Προμ."},
+    {id:uid(),title:"Τοποθέτηση",status:"pending",dueDate:"2026-05-15",priority:"high",assignee:"Τοπ."}
+  ]
 }];
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -265,6 +272,118 @@ function Sidebar({ page, nav }) {
   );
 }
 
+// ── TaskBoard Component ────────────────────────────────────────────────────────
+function TaskBoard({ projects }) {
+  const allTasks = projects.flatMap(p => (p.tasks || []).map(t => ({ ...t, projectId: p.id, projectTitle: p.title })));
+  const tasksByStatus = {
+    pending: allTasks.filter(t => t.status === 'pending'),
+    in_progress: allTasks.filter(t => t.status === 'in_progress'),
+    done: allTasks.filter(t => t.status === 'done')
+  };
+
+  const statusLabels = { pending: 'Εκκρεμές', in_progress: 'Σε εξέλιξη', done: 'Ολοκληρωμένο' };
+  const statusColors = { pending: C.warn, in_progress: C.blue, done: C.green };
+  const priorityColors = { high: C.red, medium: C.warn, low: C.textSec };
+
+  return (
+    <div style={card}>
+      <div style={{ fontWeight:600, marginBottom:12, color:C.textPri }}>📋 Πίνακας Εργασιών</div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
+        {Object.entries(tasksByStatus).map(([status, tasks]) => (
+          <div key={status} style={{ background:C.bg, borderRadius:8, padding:10 }}>
+            <div style={{ fontSize:12, fontWeight:600, color:statusColors[status], marginBottom:10, paddingBottom:8, borderBottom:`1px solid ${C.border}` }}>
+              {statusLabels[status]} ({tasks.length})
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {tasks.map(t => (
+                <div key={t.id} style={{ background:C.card, padding:10, borderRadius:6, fontSize:12, borderLeft:`3px solid ${priorityColors[t.priority]}` }}>
+                  <div style={{ fontWeight:500, marginBottom:4, color:C.textPri }}>{t.title}</div>
+                  <div style={{ fontSize:11, color:C.textSec, marginBottom:6 }}>{t.projectTitle}</div>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <span style={{ fontSize:10, color:C.textMut }}>{t.dueDate}</span>
+                    <span style={{ fontSize:10, background:statusColors[status]+"22", color:statusColors[status], padding:"2px 6px", borderRadius:3 }}>{t.assignee}</span>
+                  </div>
+                </div>
+              ))}
+              {tasks.length === 0 && <div style={{ fontSize:11, color:C.textMut, padding:8, textAlign:"center" }}>—</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Calendar Component ─────────────────────────────────────────────────────────
+function Calendar({ projects }) {
+  const [month, setMonth] = useState(new Date());
+  const allTasks = projects.flatMap(p => (p.tasks || []).map(t => ({ ...t, projectId: p.id, projectTitle: p.title })));
+  const invoices = projects.flatMap(p => (p.invoices || []).map(i => ({ ...i, projectId: p.id, projectTitle: p.title, type: 'invoice' })));
+  const allEvents = [...allTasks, ...invoices];
+
+  const getDaysInMonth = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const getFirstDayOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1).getDay();
+
+  const daysInMonth = getDaysInMonth(month);
+  const firstDay = getFirstDayOfMonth(month);
+  const monthName = month.toLocaleDateString("el-GR", { month: "long", year: "numeric" });
+
+  const getEventsForDate = (day) => {
+    const dateStr = `${month.getFullYear()}-${String(month.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    return allEvents.filter(e => (e.dueDate || e.date || "").startsWith(dateStr));
+  };
+
+  const days = [];
+  for (let i = 0; i < firstDay; i++) days.push(null);
+  for (let i = 1; i <= daysInMonth; i++) days.push(i);
+
+  return (
+    <div style={card}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <div style={{ fontWeight:600, color:C.textPri }}>📅 Ημερολόγιο</div>
+        <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+          <button style={{ ...btn(C.border,C.textSec), padding:"3px 8px", fontSize:11 }} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth()-1))}>←</button>
+          <div style={{ fontSize:12, fontWeight:500, color:C.textSec, minWidth:150, textAlign:"center" }}>{monthName}</div>
+          <button style={{ ...btn(C.border,C.textSec), padding:"3px 8px", fontSize:11 }} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth()+1))}>→</button>
+        </div>
+      </div>
+
+      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
+        <thead>
+          <tr>
+            {["Δευ","Τρί","Τετ","Πέμ","Πεμ","Σαβ","Κυρ"].map(d => (
+              <th key={d} style={{ padding:6, textAlign:"center", color:C.textSec, fontWeight:500, borderBottom:`1px solid ${C.border}` }}>{d}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: Math.ceil(days.length / 7) }).map((_, week) => (
+            <tr key={week}>
+              {days.slice(week * 7, (week + 1) * 7).map((day, idx) => {
+                const events = day ? getEventsForDate(day) : [];
+                const isToday = day && new Date().toDateString() === new Date(month.getFullYear(), month.getMonth(), day).toDateString();
+                return (
+                  <td key={idx} style={{ padding:6, minHeight:60, border:`1px solid ${C.border}`, background:isToday?`${C.accent}11`:"transparent", verticalAlign:"top", fontSize:10 }}>
+                    {day && <div style={{ fontWeight:day===1||isToday?600:400, color:isToday?C.accent:C.textSec, marginBottom:4 }}>{day}</div>}
+                    <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                      {events.slice(0,2).map(e => (
+                        <div key={e.id} style={{ background:e.type==='invoice'?C.red:C.blue, color:"white", padding:"2px 3px", borderRadius:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                          {e.type==='invoice'?'📄':e.status==='done'?'✓':'•'} {e.title || e.filename}
+                        </div>
+                      ))}
+                      {events.length > 2 && <div style={{ fontSize:9, color:C.textMut }}>+{events.length - 2}</div>}
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function Dashboard({ clients, projects, nav, clientBal }) {
   const totalBal = clients.reduce((s,c)=>s+clientBal(c.id),0);
@@ -285,6 +404,10 @@ function Dashboard({ clients, projects, nav, clientBal }) {
             <div style={{ fontSize:12, color:C.textSec, marginTop:2 }}>{l}</div>
           </div>
         ))}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
+        <TaskBoard projects={projects}/>
+        <Calendar projects={projects}/>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
         <div style={card}>
@@ -565,160 +688,401 @@ function TabOffer({ project, client, settings }) {
 }
 
 // ── Tab Συμφωνητικό ──────────────────────────────────────────────────────────────
-function TabContract({ project, client, up, settings }) {
+function TabContract({ project, client, up, settings, showClientProfile }) {
+  const [editMode, setEditMode] = useState(false);
+  const [editClient, setEditClient] = useState(client || {});
+
   const wins = project.windows||[];
   const contract = project.contract || {};
   const price = w => { const h=+w.height||0,wi=+w.width||0; return (h+wi)*2*1.5*3.9+h*wi*30+25+(w.rolo!=="—"?60:0)+(w.motor!=="—"?120:0); };
   const sub = wins.reduce((s,w)=>s+price(w),0), vat = sub*VAT, tot = sub+vat;
 
   const upC = (k,v) => up({contract:{...contract,[k]:v}});
+  const upClient = (k,v) => {
+    const updated = {...editClient, [k]:v};
+    setEditClient(updated);
+  };
+  const saveClientChanges = () => {
+    up({...editClient});
+    setEditMode(false);
+  };
+
+  // Payment plans logic
+  const payments = contract.payments || [];
+  const addPaymentPlan = (count) => {
+    const newPayments = [];
+    const step = Math.round(100 / count);
+    for (let i = 0; i < count - 1; i++) {
+      newPayments.push({ percentage: step, amount: 0, vat: 0 });
+    }
+    newPayments.push({ percentage: 100 - (step * (count - 1)), amount: 0, vat: 0 });
+    upC("payments", newPayments);
+  };
+
+  const updatePayment = (idx, pct) => {
+    const newPayments = [...payments];
+    newPayments[idx] = { ...newPayments[idx], percentage: pct, amount: (sub * pct / 100), vat: (sub * pct / 100 * VAT) };
+    upC("payments", newPayments);
+  };
 
   const printContract = () => {
     const rows = wins.map((w,i)=>`<tr><td>${i+1}</td><td>${w.typology||w.type}</td><td>${w.series}</td><td>${w.width}×${w.height}</td><td>${w.glass}</td><td>${w.color}</td><td style="text-align:right">${price(w).toFixed(2)}</td></tr>`).join("");
-    const html = `<!DOCTYPE html><html lang="el"><head><meta charset="UTF-8"><title>Συμφωνητικό ${project.code}</title><style>
-      *{box-sizing:border-box}
-      body{font-family:'Arial',sans-serif;padding:32px;font-size:13px;color:#222;background:#fff;line-height:1.6}
-      .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #c17f4e}
-      .co{font-size:22px;font-weight:700;color:#c17f4e;letter-spacing:-0.3px}.co-sub{font-size:12px;color:#888;margin-top:2px}
-      .logo{max-width:150px;max-height:60px}
-      .doc-title{font-size:18px;font-weight:700;text-align:right;color:#c17f4e}.doc-meta{font-size:12px;color:#666;margin-top:4px;text-align:right}
-      .contract-code{font-size:14px;font-weight:600;color:#c17f4e;margin-bottom:16px}
-      .parties{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px}
-      .party{padding:12px 14px;background:#f9f7f5;border-left:4px solid #c17f4e;border-radius:4px}
-      .party-title{font-weight:600;font-size:12px;text-transform:uppercase;color:#666;margin-bottom:8px}
-      .party-content{font-size:13px;line-height:1.5}
-      table{width:100%;border-collapse:collapse;margin-bottom:20px}
-      thead tr{background:#2d3239;color:#e8e4de}
-      th{padding:10px 12px;text-align:left;font-size:12px;font-weight:600}
-      td{padding:8px 12px;border-bottom:1px solid #eee;font-size:12px}
-      tr:nth-child(even) td{background:#faf9f8}
-      .totals{float:right;width:260px;border:1px solid #d0cac5;border-radius:6px;margin-left:20px;margin-bottom:20px}
-      .totals table{margin:0;border:0}
-      .totals th{background:#c17f4e;color:#fff;padding:12px}
-      .totals tr:nth-child(even) td{background:#fff}
-      .totals td{border:none;padding:10px 12px;font-size:13px}
-      .totals tr:last-child td{background:#c17f4e;color:#fff;font-weight:700;font-size:14px}
-      .terms{margin-top:20px;padding:16px;background:#f9f7f5;border-radius:6px;border-left:4px solid #c17f4e}
-      .terms h3{margin:0 0 12px;font-size:13px;color:#2d3239;font-weight:600}
-      .terms p{margin:0 0 8px;font-size:12px;line-height:1.6;color:#555}
-      .signatures{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px}
-      .signature{text-align:center;border-top:1px solid #222;padding-top:60px;font-size:12px}
-      .footer{margin-top:40px;font-size:11px;color:#aaa;text-align:center;border-top:1px solid #ddd;padding-top:12px}
-      .print-btn{margin-bottom:20px;padding:10px 22px;background:#c17f4e;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600}
-      @media print{.print-btn{display:none}body{padding:12mm}}
+    const [day,month,year] = today().split("/");
+    const docDate = `${day}/${month}/${year}`;
+
+    const html = `<!DOCTYPE html><html lang="el"><head><meta charset="UTF-8"><title>Συμφωνητικό Ανάθεσης Έργου</title><style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:'Arial',sans-serif;padding:40px;font-size:13px;color:#333;background:#fff;line-height:1.8}
+      .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;padding-bottom:20px;border-bottom:3px solid #c17f4e}
+      .co{font-size:24px;font-weight:700;color:#c17f4e}.co-sub{font-size:12px;color:#888;margin-top:4px}
+      .doc-meta{font-size:12px;color:#666;margin-top:4px}
+      .logo{max-width:120px;max-height:50px;margin-top:8px}
+      h1{font-size:18px;font-weight:700;text-align:center;color:#c17f4e;margin:30px 0}
+      h2{font-size:14px;font-weight:600;color:#2d3239;margin:24px 0 12px}
+      p{margin:0 0 12px;text-align:justify;color:#333}
+      .field{display:inline-block;border-bottom:1px solid #999;width:200px;margin:0 4px}
+      .article{margin:20px 0;text-align:justify}
+      .article-title{font-weight:600;color:#2d3239;margin-bottom:8px}
+      table{width:100%;border-collapse:collapse;margin:20px 0}
+      th{background:#2d3239;color:#e8e4de;padding:10px;text-align:left;font-size:12px;font-weight:600}
+      td{padding:8px 10px;border-bottom:1px solid #ddd;font-size:12px}
+      tr:nth-child(even) td{background:#f9f7f5}
+      .totals{float:right;width:280px;border:1px solid #d0cac5;border-radius:6px;margin-left:20px;margin-bottom:20px;background:#f9f7f5;padding:12px}
+      .totals-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ddd;font-size:12px}
+      .totals-row:last-child{border:none;background:#c17f4e;color:#fff;font-weight:700;padding:10px;margin:-12px -12px 0 -12px;border-radius:0 0 6px 6px}
+      .totals-row span:last-child{font-weight:600}
+      .signatures{display:grid;grid-template-columns:1fr 1fr;gap:60px;margin-top:50px}
+      .signature{text-align:center}
+      .sig-line{border-top:1px solid #222;height:1px;margin:60px 0 8px;width:100%}
+      .sig-name{font-size:12px;font-weight:600;margin-bottom:4px}
+      .sig-date{font-size:11px;color:#666}
+      .print-btn{position:fixed;top:20px;right:20px;padding:10px 22px;background:#c17f4e;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;z-index:1000}
+      @media print{.print-btn{display:none}body{padding:12mm;font-size:12px}h1{margin:20px 0}.article{margin:15px 0}}
       @page{size:A4;margin:12mm}
     </style></head><body>
-    <button class="print-btn" onclick="window.print()">🖨 Εκτύπωση / Αποθήκευση PDF</button>
+    <button class="print-btn" onclick="window.print()">🖨 Εκτύπωση PDF</button>
+
     <div class="top">
       <div>
         <div class="co">FlowOS</div>
         <div class="co-sub">Σύστημα ERP Αλουμινίου & Κουφωμάτων</div>
-        ${settings?.logo?`<img src="${settings.logo}" class="logo" alt="Logo">":""}
+        ${settings?.logo?`<img src="${settings.logo}" class="logo" alt="Logo">`:""}
       </div>
-      <div>
-        <div class="doc-title">📋 ΣΥΜΦΩΝΗΤΙΚΟ</div>
-        <div class="doc-meta">${project.code} · ${today()}</div>
-      </div>
-    </div>
-
-    <div class="contract-code">Κωδικός: ${contract.code||project.code}</div>
-
-    <div class="parties">
-      <div class="party">
-        <div class="party-title">Ο ΑΝΑΔΟΧΟΣ</div>
-        <div class="party-content">
-          <strong>${settings?.companyName||"Εταιρεία"}</strong><br>
-          ΑΦΜ: ${settings?.afm||"—"}<br>
-          Δ.Ο.Υ: ${settings?.doy||"—"}<br>
-          ${settings?.address||""}<br>
-          Τηλ: ${settings?.phone||"—"}
-        </div>
-      </div>
-      <div class="party">
-        <div class="party-title">Ο ΔΟΚΙΜΑΣΤΗΣ / ΚΟΜΙΣΤΗΣ</div>
-        <div class="party-content">
-          <strong>${client?.name||"—"}</strong><br>
-          Πόλη: ${client?.city||"—"}<br>
-          Τηλ: ${client?.phone||"—"}<br>
-          Email: ${client?.email||"—"}
-        </div>
+      <div style="text-align:right">
+        <div class="doc-meta"><strong>Κωδικός:</strong> ${contract.code||project.code}</div>
+        <div class="doc-meta"><strong>Ημερομηνία:</strong> ${docDate}</div>
       </div>
     </div>
 
-    <h3 style="margin:24px 0 12px;font-size:14px;color:#2d3239;font-weight:600">Λεπτομέρειες Έργου</h3>
-    <p style="margin:0 0 16px;color:#555;font-size:13px"><strong>${project.title}</strong></p>
-    ${project.address?`<p style="margin:0 0 16px;color:#666;font-size:12px">Διεύθυνση: ${project.address}</p>`:""}
+    <h1>📋 ΣΥΜΦΩΝΗΤΙΚΟ ΑΝΑΘΕΣΗΣ ΕΡΓΟΥ</h1>
 
-    <h3 style="margin:24px 0 12px;font-size:14px;color:#2d3239;font-weight:600">Κατάλογος Κουφωμάτων</h3>
+    <p>Στην <span class="field"></span> σήμερα <span class="field">${day}</span> / <span class="field">${month}</span> / <span class="field">${year}</span>, συμφωνούνται τα παρακάτω μεταξύ:</p>
+
+    <h2>Α. ΑΝΑΔΟΧΟΣ</h2>
+    <p>Η εταιρεία <span class="field"><strong>${settings?.companyName||"Εταιρεία"}</strong></span>, με έδρα <span class="field">${settings?.address||""}</span>, ΑΦΜ <span class="field">${settings?.afm||""}</span>, ΔΟΥ <span class="field">${settings?.doy||""}</span>, τηλ. <span class="field">${settings?.phone||""}</span>, εφεξής καλούμενη «Ανάδοχος».</p>
+
+    <h2>Β. ΠΕΛΑΤΗΣ</h2>
+    <p>Ο/Η <span class="field"><strong>${client?.name||"—"}</strong></span>, κάτοικος <span class="field">${client?.city||""}</span>, ΑΦΜ <span class="field">${client?.afm||""}</span>, τηλ. <span class="field">${client?.phone||""}</span>, εφεξής καλούμενος/η «Πελάτης».</p>
+
+    <div class="article">
+      <div class="article-title">Άρθρο 1 — Αντικείμενο</div>
+      <p>Ο Ανάδοχος αναλαμβάνει την κατασκευή και τοποθέτηση κουφωμάτων αλουμινίου και συναφών κατασκευών στο ακίνητο που βρίσκεται στη διεύθυνση:</p>
+      <p><strong>${project.address||"[ΔΙΕΥΘΥΝΣΗ ΕΡΓΟΥ]"}</strong></p>
+      <p>σύμφωνα με:</p>
+      <ul style="margin-left:20px">
+        <li>την προσφορά με αριθμό <strong>${project.code}</strong></li>
+        <li>τις επιτόπου μετρήσεις</li>
+        <li>τις εγκεκριμένες τεχνικές επιλογές</li>
+      </ul>
+      <p>Τα παραπάνω αποτελούν ενιαίο σύνολο με το παρόν συμφωνητικό.</p>
+    </div>
+
+    <div class="article">
+      <div class="article-title">Άρθρο 2 — Συμβατικό τίμημα</div>
+      <p>Το συνολικό τίμημα του έργου ορίζεται ως εξής:</p>
+    </div>
+
     <div class="totals">
-      <table>
-        <tr><td>Καθαρή Αξία</td><td style="text-align:right;font-weight:600">${sub.toFixed(2)} €</td></tr>
-        <tr><td>+ ΦΠΑ 24%</td><td style="text-align:right">${vat.toFixed(2)} €</td></tr>
-        <tr><td>ΣΥΝΟΛΟ</td><td style="text-align:right">${tot.toFixed(2)} €</td></tr>
-      </table>
+      <div class="totals-row">
+        <span>Καθαρή αξία</span>
+        <span>${sub.toFixed(2)} €</span>
+      </div>
+      <div class="totals-row">
+        <span>ΦΠΑ 24%</span>
+        <span>${vat.toFixed(2)} €</span>
+      </div>
+      <div class="totals-row">
+        <span>Συνολικό ποσό</span>
+        <span>${tot.toFixed(2)} €</span>
+      </div>
     </div>
 
-    <table>
-      <thead><tr><th>#</th><th>Τυπολογία</th><th>Σειρά</th><th>Διαστάσεις</th><th>Υάλωση</th><th>Χρώμα</th><th>Τιμή €</th></tr></thead>
-      <tbody>${rows}</tbody>
+    <p>Το ποσό αφορά αποκλειστικά τις συμφωνημένες εργασίες και υλικά. Κάθε τροποποίηση ή πρόσθετη εργασία εκτελείται κατόπιν συνεννόησης και επιβαρύνει τον Πελάτη.</p>
+
+    <div class="article">
+      <div class="article-title">Άρθρο 3 — Τρόπος πληρωμής</div>
+      <p>Η πληρωμή του έργου πραγματοποιείται ως εξής:</p>
+      <ul style="margin-left:20px">
+        <li>Προκαταβολή: <span class="field"></span> €</li>
+        <li>Ενδιάμεση καταβολή: <span class="field"></span> €</li>
+        <li>Εξόφληση: με την ολοκλήρωση του έργου</li>
+      </ul>
+      <p>Η πρόοδος του έργου συνδέεται με την τήρηση των ανωτέρω πληρωμών. Σε περίπτωση καθυστέρησης πληρωμής, ο Ανάδοχος δύναται να αναστείλει τις εργασίες έως την τακτοποίηση της οφειλής.</p>
+    </div>
+
+    <div class="article">
+      <div class="article-title">Άρθρο 4 — Χρόνος εκτέλεσης</div>
+      <p>Ο εκτιμώμενος χρόνος ολοκλήρωσης του έργου είναι: <span class="field"></span> ημέρες</p>
+      <p>και υπολογίζεται από:</p>
+      <ul style="margin-left:20px">
+        <li>την καταβολή της προκαταβολής</li>
+        <li>την επιβεβαίωση των τελικών μετρήσεων</li>
+      </ul>
+      <p>Ο χρόνος δύναται να μεταβληθεί σε περιπτώσεις:</p>
+      <ul style="margin-left:20px">
+        <li>καθυστερήσεων προμηθευτών</li>
+        <li>τροποποιήσεων από τον Πελάτη</li>
+        <li>μη ετοιμότητας του χώρου</li>
+        <li>ανωτέρας βίας</li>
+      </ul>
+    </div>
+
+    <div class="article">
+      <div class="article-title">Άρθρο 5 — Υποχρεώσεις Πελάτη</div>
+      <p>Ο Πελάτης υποχρεούται:</p>
+      <ul style="margin-left:20px">
+        <li>να εξασφαλίζει πρόσβαση στον χώρο εργασίας</li>
+        <li>να έχει ολοκληρώσει εγκαίρως τυχόν προαπαιτούμενες εργασίες τρίτων</li>
+        <li>να εγκρίνει έγκαιρα τεχνικές επιλογές και τροποποιήσεις</li>
+        <li>να καταβάλλει τις συμφωνημένες πληρωμές εντός των προβλεπόμενων προθεσμιών</li>
+      </ul>
+      <p>Τυχόν αλλαγές μετά την επιβεβαίωση ή την έναρξη της κατασκευής ενδέχεται να επηρεάσουν το κόστος και τον χρόνο παράδοσης.</p>
+    </div>
+
+    <div class="article">
+      <div class="article-title">Άρθρο 6 — Τοποθέτηση και παραλαβή</div>
+      <p>Με την ολοκλήρωση της τοποθέτησης, ο Πελάτης οφείλει να ελέγξει το έργο και να γνωστοποιήσει άμεσα τυχόν παρατηρήσεις. Η χρήση του έργου ή η μη διατύπωση έγγραφης ένστασης εντός εύλογου χρόνου συνιστά αποδοχή.</p>
+    </div>
+
+    <div class="article">
+      <div class="article-title">Άρθρο 7 — Εγγύηση</div>
+      <p>Ο Ανάδοχος παρέχει εγγύηση καλής λειτουργίας για αστοχίες που οφείλονται σε κατασκευή ή τοποθέτηση. Η εγγύηση δεν καλύπτει:</p>
+      <ul style="margin-left:20px">
+        <li>κακή χρήση</li>
+        <li>φυσιολογική φθορά</li>
+        <li>επεμβάσεις τρίτων</li>
+        <li>ζημίες από εξωγενείς παράγοντες</li>
+      </ul>
+      <p>Η ισχύς της εγγύησης προϋποθέτει την πλήρη εξόφληση του έργου.</p>
+    </div>
+
+    <div class="article">
+      <div class="article-title">Άρθρο 8 — Τροποποιήσεις και διακοπή έργου</div>
+      <p>Σε περίπτωση τροποποίησης ή διακοπής του έργου από τον Πελάτη:</p>
+      <ul style="margin-left:20px">
+        <li>τιμολογούνται οι ήδη εκτελεσμένες εργασίες</li>
+        <li>χρεώνονται τα υλικά που έχουν παραγγελθεί ή κατασκευαστεί</li>
+      </ul>
+      <p>Η προκαταβολή συμψηφίζεται με τα παραπάνω.</p>
+    </div>
+
+    <div class="article">
+      <div class="article-title">Άρθρο 9 — Τελικές διατάξεις</div>
+      <p>Το παρόν αποτελεί τη συνολική συμφωνία μεταξύ των μερών. Τυχόν τροποποιήσεις ισχύουν μόνο εφόσον συμφωνηθούν εγγράφως. Για κάθε διαφορά αρμόδια είναι τα δικαστήρια της περιοχής του έργου.</p>
+    </div>
+
+    <h2 style="text-align:center;margin-top:50px">ΥΠΟΓΡΑΦΕΣ</h2>
+
+    <table style="border:none;margin-top:30px">
+      <tr style="border:none">
+        <td style="border:none;text-align:center;padding:40px 20px;vertical-align:top">
+          <div style="border-top:1px solid #222;width:180px;height:60px"></div>
+          <div style="margin-top:10px;font-weight:600;font-size:12px">Ο Πελάτης</div>
+          <div style="font-size:11px;color:#666;margin-top:4px">Ημερομηνία: ___________</div>
+        </td>
+        <td style="border:none;text-align:center;padding:40px 20px;vertical-align:top">
+          <div style="border-top:1px solid #222;width:180px;height:60px"></div>
+          <div style="margin-top:10px;font-weight:600;font-size:12px">Ο Ανάδοχος</div>
+          <div style="font-size:11px;color:#666;margin-top:4px">Ημερομηνία: ___________</div>
+        </td>
+      </tr>
     </table>
 
-    <div class="terms">
-      <h3>Όροι Συμφωνητικού</h3>
-      ${contract.terms?`<p>${contract.terms}</p>`:"<p>Το παρόν συμφωνητικό καλύπτει την κατασκευή και εγκατάσταση των ανωτέρω κουφωμάτων σύμφωνα με τις τεχνικές προδιαγραφές που καθορίστηκαν. Η πληρωμή θα πραγματοποιηθεί σε τρεις φάσεις: Προκαταβολή 50%, Αρχή Τοποθέτησης 20%, Αποπεράτωση 30%.</p>"}
-    </div>
-
-    <div class="signatures">
-      <div class="signature">
-        <div style="margin-bottom:8px;font-weight:600">Υπογραφή Δοκιμαστή</div>
-        <div style="font-size:11px;color:#888">Ημερομηνία: ___________</div>
-      </div>
-      <div class="signature">
-        <div style="margin-bottom:8px;font-weight:600">Υπογραφή Αναδόχου</div>
-        <div style="font-size:11px;color:#888">Ημερομηνία: ___________</div>
-      </div>
-    </div>
-
-    <div class="footer">Παράγεται από FlowOS · ${today()}</div>
+    <div style="margin-top:40px;font-size:11px;color:#999;text-align:center;border-top:1px solid #ddd;padding-top:12px">Παράγεται από FlowOS · ${today()}</div>
     </body></html>`;
 
     const w2=window.open("","_blank");
     if(w2){w2.document.write(html);w2.document.close();setTimeout(()=>w2.print(),400);}
   };
 
+  const [day, month, year] = today().split("/");
+
   return (
-    <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-        <div style={{ fontWeight:600 }}>Συμφωνητικό</div>
+    <div style={{ display:"flex", flexDirection:"column", height:"100%", gap:12 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ fontWeight:600 }}>📋 Συμφωνητικό Ανάθεσης Έργου</div>
         <div style={{ display:"flex", gap:8 }}>
-          <button style={btn(C.accent)} onClick={()=>upC("isEditing",!contract.isEditing)}>✏️ Επεξεργασία</button>
-          <button style={btn(C.green)} onClick={printContract}>🖨 Εκτύπωση PDF</button>
+          <button style={btn(C.accent)} onClick={()=>setEditMode(!editMode)}>{editMode?"✓ Αποθήκευση":"✏️ Επεξεργασία"}</button>
+          <button style={btn(C.green)} onClick={printContract} disabled={!client?.name}>🖨 Εκτύπωση PDF</button>
         </div>
       </div>
 
-      {contract.isEditing?(
-        <div style={{...card, border:`1px solid ${C.accent}`}}>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
-            <F label="Κωδικός Συμφωνητικού" value={contract.code||""} onChange={v=>upC("code",v)} ph="ΣΥΜ-001"/>
-          </div>
-          <div style={{ marginBottom:10 }}>
-            <label style={lbl}>Όροι Συμφωνητικού</label>
-            <textarea style={{ ...inp, minHeight:120, resize:"vertical" }} value={contract.terms||""} onChange={e=>upC("terms",e.target.value)} placeholder="Αναλυτική περιγραφή όρων και προϋποθέσεων..."/>
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <button style={btn(C.accent)} onClick={()=>upC("isEditing",false)}>✓ Αποθήκευση</button>
-            <button style={btn(C.border,C.textPri)} onClick={()=>upC("isEditing",false)}>Ακύρωση</button>
-          </div>
-        </div>
+      {!client?.name?(
+        <div style={{ ...card, color:C.textMut, textAlign:"center" }}>ℹ️ Δημιουργήστε πρώτα τον πελάτη και καταχωρήστε τα στοιχεία του έργου.</div>
       ):(
-        <div style={{...card}}>
-          <div style={{ marginBottom:12 }}>
-            <div style={{ fontSize:11, color:C.textSec, marginBottom:3, display:"block", textTransform:"uppercase", letterSpacing:"0.05em" }}>Κωδικός Συμφωνητικού</div>
-            <div style={{ fontSize:14, fontWeight:600, color:C.accent }}>{contract.code||project.code}</div>
+        <div style={{...card, flex:1, overflowY:"auto", fontSize:12, lineHeight:1.6, color:C.textPri}}>
+          <div style={{marginBottom:24, paddingBottom:16, borderBottom:`1px solid ${C.border}`}}>
+            <div style={{color:C.accent, fontSize:14, fontWeight:700, marginBottom:8}}>Κωδικός: {contract.code||project.code}</div>
+            <div style={{color:C.textSec, fontSize:11}}>Ημερομηνία: {day}/{month}/{year}</div>
           </div>
-          <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:12 }}>
-            <div style={{ fontSize:11, color:C.textSec, marginBottom:8, display:"block", textTransform:"uppercase", letterSpacing:"0.05em" }}>Όροι</div>
-            <div style={{ fontSize:13, color:C.textPri, lineHeight:1.6 }}>{contract.terms||"Δεν έχουν καταχωρηθεί ειδικοί όροι."}</div>
+
+          <h3 style={{fontSize:14, fontWeight:600, color:C.accent, textAlign:"center", margin:"20px 0"}}>ΣΥΜΦΩΝΗΤΙΚΟ ΑΝΑΘΕΣΗΣ ΕΡΓΟΥ</h3>
+
+          <p style={{margin:"12px 0", textAlign:"justify"}}>Στην <u style={{borderBottom:"1px solid #666", width:"150px", display:"inline-block"}}>&nbsp;</u> σήμερα <u style={{borderBottom:"1px solid #666", width:"30px", display:"inline-block"}}>{day}</u> / <u style={{borderBottom:"1px solid #666", width:"30px", display:"inline-block"}}>{month}</u> / <u style={{borderBottom:"1px solid #666", width:"50px", display:"inline-block"}}>{year}</u>, συμφωνούνται τα παρακάτω μεταξύ:</p>
+
+          <h4 style={{fontWeight:600, color:C.accent, margin:"16px 0 8px"}}>Α. ΑΝΑΔΟΧΟΣ</h4>
+          {editMode?(
+            <div style={{background:C.card, padding:8, borderRadius:4, marginBottom:12}}>
+              <F label="Εταιρεία" value={editClient.companyName||settings?.companyName||""} onChange={v=>upClient("companyName",v)} ph="Όνομα εταιρείας"/>
+              <F label="Διεύθυνση" value={editClient.address||settings?.address||""} onChange={v=>upClient("address",v)} ph="Διεύθυνση"/>
+              <F label="ΑΦΜ" value={editClient.afm||settings?.afm||""} onChange={v=>upClient("afm",v)} ph="ΑΦΜ"/>
+              <F label="ΔΟΥ" value={editClient.doy||settings?.doy||""} onChange={v=>upClient("doy",v)} ph="ΔΟΥ"/>
+              <F label="Τηλ." value={editClient.phone||settings?.phone||""} onChange={v=>upClient("phone",v)} ph="Τηλέφωνο"/>
+            </div>
+          ):(
+            <p style={{margin:"8px 0", textAlign:"justify"}}>Η εταιρεία <strong>{editClient.companyName||settings?.companyName||"Εταιρεία"}</strong>, με έδρα {editClient.address||settings?.address||"—"}, ΑΦΜ {editClient.afm||settings?.afm||"—"}, ΔΟΥ {editClient.doy||settings?.doy||"—"}, τηλ. {editClient.phone||settings?.phone||"—"}, εφεξής καλούμενη «Ανάδοχος».</p>
+          )}
+
+          <h4 style={{fontWeight:600, color:C.accent, margin:"16px 0 8px"}}>Β. ΠΕΛΑΤΗΣ</h4>
+          {editMode?(
+            <div style={{background:C.card, padding:8, borderRadius:4, marginBottom:12}}>
+              <F label="Όνομα Πελάτη" value={editClient.name||""} onChange={v=>upClient("name",v)} ph="Όνομα"/>
+              <F label="Πόλη" value={editClient.city||""} onChange={v=>upClient("city",v)} ph="Πόλη"/>
+              <F label="ΑΦΜ" value={editClient.afm||""} onChange={v=>upClient("afm",v)} ph="ΑΦΜ"/>
+              <F label="Τηλ." value={editClient.phone||""} onChange={v=>upClient("phone",v)} ph="Τηλέφωνο"/>
+              {editMode && <div style={{display:"flex", gap:8, marginTop:8}}>
+                <button style={btn(C.green)} onClick={saveClientChanges}>✓ Αποθήκευση Πελάτη</button>
+                <button style={btn(C.border,C.textPri)} onClick={()=>{setEditMode(false); setEditClient(client||{});}}>Ακύρωση</button>
+              </div>}
+            </div>
+          ):(
+            <p style={{margin:"8px 0", textAlign:"justify"}}>Ο/Η <strong style={{cursor:"pointer", color:C.accent, textDecoration:"underline"}} onClick={()=>showClientProfile?.(client?.id)}>{editClient.name||client?.name||"—"}</strong>, κάτοικος {editClient.city||client?.city||"—"}, ΑΦΜ {editClient.afm||client?.afm||"—"}, τηλ. {editClient.phone||client?.phone||"—"}, εφεξής καλούμενος/η «Πελάτης».</p>
+          )}
+
+          <div style={{margin:"16px 0", paddingLeft:12, borderLeft:`2px solid ${C.accent}`}}>
+            <h4 style={{fontWeight:600, margin:"8px 0"}}>Άρθρο 1 — Αντικείμενο</h4>
+            <p>Ο Ανάδοχος αναλαμβάνει την κατασκευή και τοποθέτηση κουφωμάτων αλουμινίου στο ακίνητο που βρίσκεται στη διεύθυνση: <strong>{project.address}</strong></p>
+            <p style={{marginTop:8}}>σύμφωνα με:</p>
+            <ul style={{marginLeft:20, marginTop:4}}><li>την προσφορά με αριθμό <strong>{project.code}</strong></li><li>τις επιτόπου μετρήσεις</li><li>τις εγκεκριμένες τεχνικές επιλογές</li></ul>
+          </div>
+
+          <div style={{margin:"16px 0", paddingLeft:12, borderLeft:`2px solid ${C.accent}`}}>
+            <h4 style={{fontWeight:600, margin:"8px 0"}}>Άρθρο 2 — Συμβατικό τίμημα</h4>
+            <div style={{background:C.card, padding:8, borderRadius:4, margin:"8px 0", fontSize:11}}>
+              <div style={{display:"flex", justifyContent:"space-between", padding:4}}>
+                <span>Καθαρή αξία:</span><strong>{sub.toFixed(2)} €</strong>
+              </div>
+              <div style={{display:"flex", justifyContent:"space-between", padding:4}}>
+                <span>+ ΦΠΑ 24%:</span><strong>{vat.toFixed(2)} €</strong>
+              </div>
+              <div style={{display:"flex", justifyContent:"space-between", padding:4, background:C.accent, color:"white", fontWeight:700, borderRadius:3}}>
+                <span>ΣΥΝΟΛΟ:</span><strong>{tot.toFixed(2)} €</strong>
+              </div>
+            </div>
+            <p>Το ποσό αφορά αποκλειστικά τις συμφωνημένες εργασίες και υλικά. Κάθε τροποποίηση ή πρόσθετη εργασία εκτελείται κατόπιν συνεννόησης και επιβαρύνει τον Πελάτη.</p>
+          </div>
+
+          <div style={{margin:"16px 0", paddingLeft:12, borderLeft:`2px solid ${C.accent}`}}>
+            <h4 style={{fontWeight:600, margin:"8px 0"}}>Άρθρο 3 — Τρόπος πληρωμής</h4>
+            {editMode && (
+              <div style={{background:C.card, padding:8, borderRadius:4, marginBottom:12}}>
+                <label style={{fontSize:11, color:C.textSec, display:"block", marginBottom:8}}>ΣΧΕΔΙΟ ΠΛΗΡΩΜΩΝ</label>
+                <div style={{display:"flex", gap:4, marginBottom:8, flexWrap:"wrap"}}>
+                  {[2,3,4,5].map(n=>(
+                    <button key={n} style={{...btn(payments.length===n?C.accent:C.border, payments.length===n?C.bg:C.textPri), fontSize:11, padding:"4px 8px"}} onClick={()=>addPaymentPlan(n)}>
+                      {n} πληρωμές
+                    </button>
+                  ))}
+                </div>
+                {payments.length > 0 && (
+                  <div style={{fontSize:11}}>
+                    {payments.map((p,i)=>(
+                      <div key={i} style={{marginBottom:8, padding:6, background:C.bg, borderRadius:3}}>
+                        <label style={{display:"block", marginBottom:4}}>Πληρωμή {i+1}:</label>
+                        <div style={{display:"flex", gap:4, alignItems:"center"}}>
+                          <input type="range" min="0" max="100" value={p.percentage} onChange={e=>updatePayment(i, +e.target.value)} style={{flex:1, height:6}}/>
+                          <span style={{minWidth:40}}>{p.percentage}%</span>
+                          <span style={{minWidth:60, textAlign:"right"}}>{p.amount.toFixed(2)} €</span>
+                          <span style={{minWidth:50, textAlign:"right", color:C.textSec}}>ΦΠΑ: {p.vat.toFixed(2)} €</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <p>Η πληρωμή του έργου πραγματοποιείται ως εξής:</p>
+            {payments.length > 0 ? (
+              <ul style={{marginLeft:20, marginTop:4}}>
+                {payments.map((p,i)=>(
+                  <li key={i}>Πληρωμή {i+1}: {p.percentage}% = {p.amount.toFixed(2)} € (+ ΦΠΑ {p.vat.toFixed(2)} €)</li>
+                ))}
+              </ul>
+            ) : (
+              <ul style={{marginLeft:20, marginTop:4}}><li>Προκαταβολή: _____ €</li><li>Ενδιάμεση καταβολή: _____ €</li><li>Εξόφληση: με την ολοκλήρωση του έργου</li></ul>
+            )}
+            <p style={{marginTop:8}}>Σε περίπτωση καθυστέρησης πληρωμής, ο Ανάδοχος δύναται να αναστείλει τις εργασίες.</p>
+          </div>
+
+          <div style={{margin:"16px 0", paddingLeft:12, borderLeft:`2px solid ${C.accent}`}}>
+            <h4 style={{fontWeight:600, margin:"8px 0"}}>Άρθρο 4 — Χρόνος εκτέλεσης</h4>
+            <p>Ο εκτιμώμενος χρόνος ολοκλήρωσης: <u>_____</u> ημέρες</p>
+            <p style={{marginTop:8}}>Ο χρόνος δύναται να μεταβληθεί σε περιπτώσεις: καθυστερήσεων προμηθευτών, τροποποιήσεων, μη ετοιμότητας χώρου ή ανωτέρας βίας.</p>
+          </div>
+
+          <div style={{margin:"16px 0", paddingLeft:12, borderLeft:`2px solid ${C.accent}`}}>
+            <h4 style={{fontWeight:600, margin:"8px 0"}}>Άρθρο 5 — Υποχρεώσεις Πελάτη</h4>
+            <ul style={{marginLeft:20, marginTop:4}}><li>εξασφάλιση πρόσβασης στον χώρο εργασίας</li><li>ολοκλήρωση προαπαιτούμενων εργασιών τρίτων</li><li>έγκαιρη έγκριση τεχνικών επιλογών</li><li>καταβολή συμφωνημένων πληρωμών</li></ul>
+          </div>
+
+          <div style={{margin:"16px 0", paddingLeft:12, borderLeft:`2px solid ${C.accent}`}}>
+            <h4 style={{fontWeight:600, margin:"8px 0"}}>Άρθρο 6 — Τοποθέτηση και παραλαβή</h4>
+            <p>Με την ολοκλήρωση της τοποθέτησης, ο Πελάτης οφείλει να ελέγξει το έργο και να γνωστοποιήσει άμεσα τυχόν παρατηρήσεις. Η χρήση του έργου συνιστά αποδοχή.</p>
+          </div>
+
+          <div style={{margin:"16px 0", paddingLeft:12, borderLeft:`2px solid ${C.accent}`}}>
+            <h4 style={{fontWeight:600, margin:"8px 0"}}>Άρθρο 7 — Εγγύηση</h4>
+            <p>Ο Ανάδοχος παρέχει εγγύηση για αστοχίες που οφείλονται σε κατασκευή ή τοποθέτηση. Η εγγύηση δεν καλύπτει: κακή χρήση, φυσιολογική φθορά, επεμβάσεις τρίτων ή ζημίες από εξωγενείς παράγοντες.</p>
+          </div>
+
+          <div style={{margin:"16px 0", paddingLeft:12, borderLeft:`2px solid ${C.accent}`}}>
+            <h4 style={{fontWeight:600, margin:"8px 0"}}>Άρθρο 8 — Τροποποιήσεις και διακοπή</h4>
+            <p>Σε περίπτωση διακοπής: τιμολογούνται οι εκτελεσμένες εργασίες και χρεώνονται τα υλικά που παραγγέλθηκαν. Η προκαταβολή συμψηφίζεται.</p>
+          </div>
+
+          <div style={{margin:"16px 0", paddingLeft:12, borderLeft:`2px solid ${C.accent}`}}>
+            <h4 style={{fontWeight:600, margin:"8px 0"}}>Άρθρο 9 — Τελικές διατάξεις</h4>
+            <p>Το παρόν αποτελεί τη συνολική συμφωνία. Τυχόν τροποποιήσεις ισχύουν μόνο εφόσον συμφωνηθούν εγγράφως.</p>
+          </div>
+
+          <div style={{margin:"24px 0", paddingTop:16, borderTop:`1px solid ${C.border}`}}>
+            <p style={{fontWeight:600, textAlign:"center", marginBottom:16}}>ΥΠΟΓΡΑΦΕΣ</p>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:40}}>
+              <div style={{textAlign:"center"}}>
+                <div style={{borderTop:`1px solid ${C.textPri}`, height:60, marginBottom:8}}></div>
+                <div style={{fontWeight:600}}>Ο Πελάτης</div>
+                <div style={{fontSize:11, color:C.textSec, marginTop:4}}>Ημερομηνία: _________</div>
+              </div>
+              <div style={{textAlign:"center"}}>
+                <div style={{borderTop:`1px solid ${C.textPri}`, height:60, marginBottom:8}}></div>
+                <div style={{fontWeight:600}}>Ο Ανάδοχος</div>
+                <div style={{fontSize:11, color:C.textSec, marginTop:4}}>Ημερομηνία: _________</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{textAlign:"center", fontSize:10, color:C.textSec, marginTop:16, paddingTop:12, borderTop:`1px solid ${C.border}`}}>
+            Παράγεται από FlowOS · {today()}
           </div>
         </div>
       )}
